@@ -1738,6 +1738,21 @@ function SandboxBanner() {
   );
 }
 
+function WelcomeGuide({ open, onClose }) {
+  if (!open) return null;
+  return (
+    <div className="guide-scrim" onClick={onClose}>
+      <div className="guide" onClick={(e) => e.stopPropagation()}>
+        <h3>⌂ Welcome to TapaCasa</h3>
+        <p><b>1 · Claim your ground.</b> Search any address, tap the satellite map, 🎲 roll a random spot on Earth, or grab a curated listing. Trace the real boundary if you want exact.</p>
+        <p><b>2 · Dream it in.</b> Add anything from the catalog — or just tell the ✦ Design Director in plain words: "infinity pool behind the house, cypress along the drive, marble in the foyer." It prices and places everything, true to size.</p>
+        <p><b>3 · Live in it.</b> Flip to 3D land and 🚶 walk your property, carve real buildings away in 🌍 Photoreal, arrange rooms floor by floor, watch cost & taxes update — then 🔗 share the link or print the blueprint.</p>
+        <button className="btn-orange" onClick={onClose}>Let's build →</button>
+      </div>
+    </div>
+  );
+}
+
 export default function TapaCasa() {
   return <ErrorShield><SandboxBanner /><TapaCasaApp /></ErrorShield>;
 }
@@ -1764,8 +1779,22 @@ function TapaCasaApp() {
   const [compare, setCompare] = useState(null);
   const [satOn, setSatOn] = useState(true);
   const [floorSel, setFloorSel] = useState("1");
+  const [newRoom, setNewRoom] = useState("");
   const [snapUrl, setSnapUrl] = useState(null);
   const [nearby, setNearby] = useState(null);
+  const [customRooms, setCustomRooms] = useState([]);
+  const seedRooms = (label) => {
+    const m = label.match(/([\d,]+)/);
+    const sq = m ? +m[1].replace(/,/g, "") : 3000;
+    const base = ["Foyer", "Great Room", "Kitchen", "Dining Room", "Primary Suite", "Bedroom 2", "Laundry"];
+    if (sq >= 5000) base.push("Bedroom 3", "Home Office", "Media Room");
+    if (sq >= 8000) base.push("Gym", "Guest Suite", "Library");
+    if (sq >= 12000) base.push("Bedroom 4", "Conservatory", "Staff Suite");
+    setCustomRooms((r) => {
+      const have = new Set(r.map((x) => x.name));
+      return [...r, ...base.filter((n) => !have.has(n)).map((n) => ({ name: n, floor: "1" }))];
+    });
+  };
   const scoutNearby = async () => {
     if (!location.coords) return;
     setNearby({ busy: true });
@@ -1780,6 +1809,8 @@ function TapaCasaApp() {
     }
     setNearby(out.length ? { rows: out } : { err: "Nearby lookup needs the server GOOGLE_API_KEY with Places API enabled." });
   };
+  const [showGuide, setShowGuide] = useState(() => { try { return !localStorage.getItem("tapacasa_seen"); } catch { return true; } });
+  const closeGuide = () => { setShowGuide(false); try { localStorage.setItem("tapacasa_seen", "1"); } catch { /* ok */ } };
   const dropSpot = useRef(0);
 
   /* undo / redo */
@@ -1798,7 +1829,7 @@ function TapaCasaApp() {
       const h = window.location.hash;
       if (h && h.startsWith("#d=")) {
         const d = decodeShare(h.slice(3));
-        if (d && d.l) { setLocation(d.l); setPlaced(d.p || []); setSatOn(!!d.l.coords); }
+        if (d && d.l) { setLocation(d.l); setPlaced(d.p || []); setCustomRooms(d.r || []); setSatOn(!!d.l.coords); }
       }
     } catch { /* bad link */ }
   }, []);
@@ -1852,6 +1883,7 @@ function TapaCasaApp() {
       room: extra.room || "", notes: extra.notes || "", floor: extra.floor || "1",
       x: extra.x ?? spot.x, y: extra.y ?? spot.y,
     }]);
+    if (item.id === "house") seedRooms(v[0]);
     return uid;
   };
 
@@ -1876,7 +1908,7 @@ function TapaCasaApp() {
     const existing = placed.map((p) => `${p.name}${p.fp ? ` at (${Math.round(p.x)},${Math.round(p.y)}) ft, ${p.fp[0]}×${p.fp[1]}` : p.room ? ` in ${p.room}` : ""}`).join("; ") || "nothing yet";
     try {
       const text = await askAI(
-`You are the design director inside a property-design app. The visible site plan is a ${Math.round(win)}×${Math.round(win * 0.75)} ft area (origin top-left, x→right, y→down). Already on the plan/spec: ${existing}.
+`You are the design director inside a property-design app. The property is located in ${location.region}${location.mapLabel ? " (" + location.mapLabel + ")" : ""} — use vendor names that sound like plausible LOCAL specialty companies for that region, and price at that region's actual market level (shown in USD). The visible site plan is a ${Math.round(win)}×${Math.round(win * 0.75)} ft area (origin top-left, x→right, y→down). Already on the plan/spec: ${existing}.
 
 The user requests: "${director}"
 
@@ -1935,7 +1967,7 @@ Features:\n${spec || "Vacant land only."}`);
   /* ── SAVE / LOAD ── */
   const saveProject = async () => {
     const name = projName.trim() || `${location.name} — ${new Date().toLocaleDateString()}`;
-    const next = [{ id: Date.now(), name, savedAt: Date.now(), location, placed, customItems }, ...projects.filter((p) => p.name !== name)].slice(0, 12);
+    const next = [{ id: Date.now(), name, savedAt: Date.now(), location, placed, customItems, customRooms }, ...projects.filter((p) => p.name !== name)].slice(0, 12);
     setProjects(next);
     const ok = await saveProjects(next);
     setSaveMsg(ok ? `Saved "${name}"` : "Saved for this session (storage unavailable)");
@@ -1943,7 +1975,7 @@ Features:\n${spec || "Vacant land only."}`);
     setTimeout(() => setSaveMsg(""), 3500);
   };
   const openProject = (p) => {
-    setLocation(p.location); setPlaced(p.placed || []); setCustomItems(p.customItems || []);
+    setLocation(p.location); setPlaced(p.placed || []); setCustomItems(p.customItems || []); setCustomRooms(p.customRooms || []);
     setSelected(null); setMobileTab("plan");
   };
   const deleteProject = async (id) => {
@@ -1992,9 +2024,11 @@ Features:\n${spec || "Vacant land only."}`);
   if (!location) {
     return (
       <div className="app"><Style />
+        <WelcomeGuide open={showGuide} onClose={closeGuide} />
         <header className="hdr">
           <div className="hdr-mark">⌂</div>
-          <div><h1>TapaCasa</h1><p className="hdr-sub">SHEET 1 — SITE SELECTION · ANYWHERE ON EARTH · v13-CLEARWORK</p></div>
+          <div style={{ flex: 1 }}><h1>TapaCasa</h1><p className="hdr-sub">SHEET 1 — SITE SELECTION · ANYWHERE ON EARTH · v14-FLOW</p></div>
+          <button className="btn-ghost xs" onClick={() => setShowGuide(true)}>? How it works</button>
         </header>
         <div className="loc-wrap">
           <div className="loc-intro">
@@ -2062,6 +2096,11 @@ Features:\n${spec || "Vacant land only."}`);
     roomsByFloor[f] = roomsByFloor[f] || {};
     (roomsByFloor[f][r] = roomsByFloor[f][r] || []).push(p);
   });
+  customRooms.forEach(({ name, floor }) => {
+    rooms[name] = rooms[name] || [];
+    roomsByFloor[floor] = roomsByFloor[floor] || {};
+    roomsByFloor[floor][name] = roomsByFloor[floor][name] || [];
+  });
   const floorOrder = ["B", "1", "2", "3"];
   const floorsUsed = floorOrder.filter((f) => roomsByFloor[f]);
   const floorTabs = floorsUsed.length ? floorsUsed : ["1"];
@@ -2069,6 +2108,7 @@ Features:\n${spec || "Vacant land only."}`);
 
   return (
     <div className="app"><Style />
+      <WelcomeGuide open={showGuide} onClose={closeGuide} />
       <header className="hdr no-print">
         <div className="hdr-mark">⌂</div>
         <div className="hdr-title">
@@ -2166,8 +2206,19 @@ Features:\n${spec || "Vacant land only."}`);
           ) : planView === "three" ? (
             <ThreeDView location={location} items={placed.filter((p) => p.fp)} viewFt={viewFt} onSnapshot={setSnapUrl} />
           ) : planView === "floor" ? (
-            <FloorPlan houseSqft={perFloorSqft} floorLabel={floorSel === "B" ? "BASEMENT" : `LEVEL ${floorSel}`}
-              rooms={roomsByFloor[floorSel] || {}} selectedRoom={selectedRoom} onSelectRoom={setSelectedRoom} />
+            <div>
+              <div className="addroom-row">
+                <input className="ci-mini grow" placeholder="Add a room to this level (e.g. Wine Tasting Room)" value={newRoom}
+                  onChange={(e) => setNewRoom(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && newRoom.trim()) { setCustomRooms((r) => [...r, { name: newRoom.trim(), floor: floorSel }]); setNewRoom(""); } }} />
+                <button className="btn-orange sm" onClick={() => { if (newRoom.trim()) { setCustomRooms((r) => [...r, { name: newRoom.trim(), floor: floorSel }]); setNewRoom(""); } }}>+ Room</button>
+              </div>
+              <FloorPlan houseSqft={perFloorSqft} floorLabel={floorSel === "B" ? "BASEMENT" : `LEVEL ${floorSel}`}
+                rooms={roomsByFloor[floorSel] || {}} selectedRoom={selectedRoom} onSelectRoom={setSelectedRoom} />
+              {selectedRoom && (roomsByFloor[floorSel]?.[selectedRoom] || []).length === 0 && (
+                <button className="ci-remove" onClick={() => { setCustomRooms((r) => r.filter((x) => !(x.name === selectedRoom && x.floor === floorSel))); setSelectedRoom(null); }}>Remove empty room "{selectedRoom}"</button>
+              )}
+            </div>
           ) : (
           <SitePlan location={location} items={placed.filter((p) => p.fp)} selected={selected}
             onSelect={setSelected} onMove={(uid, x, y) => patch(uid, { x, y })} viewFt={viewFt}
@@ -2213,7 +2264,7 @@ Features:\n${spec || "Vacant land only."}`);
           <button className="btn-ghost wide" onClick={exportCSV}>⬇ Export spec sheet (CSV)</button>
           <button className="btn-ghost wide" onClick={() => {
             try {
-              const url = window.location.href.split("#")[0] + "#d=" + encodeShare(location, placed);
+              const url = window.location.href.split("#")[0] + "#d=" + btoa(unescape(encodeURIComponent(JSON.stringify({ l: location, p: placed, r: customRooms })))).replace(/=+$/, "");
               navigator.clipboard?.writeText(url);
               setSaveMsg("🔗 Share link copied — anyone who opens it sees this exact design.");
               setTimeout(() => setSaveMsg(""), 4000);
@@ -2258,6 +2309,7 @@ Features:\n${spec || "Vacant land only."}`);
               <button className="btn-ghost xs" onClick={() => setListing(null)}>Close</button>
             </div>
           )}
+          <datalist id="roomlist">{Object.keys(rooms).map((r) => <option key={r} value={r} />)}</datalist>
           <div className="panel-head" style={{ marginTop: 14 }}>COST SCHEDULE</div>
           <div className="cost-line big"><span>Land — {location.name}</span><b>{fmt(totals.land)}</b></div>
           <div className="cost-items">
@@ -2277,7 +2329,7 @@ Features:\n${spec || "Vacant land only."}`);
                       <select className="ci-mini fl" value={p.floor || "1"} onChange={(e) => patch(p.uid, { floor: e.target.value })} aria-label="Floor">
                         <option value="B">Bsmt</option><option value="1">L1</option><option value="2">L2</option><option value="3">L3</option>
                       </select>
-                      <input className="ci-mini grow" placeholder="Room (e.g. Primary bedroom)" value={p.room} onChange={(e) => patch(p.uid, { room: e.target.value })} />
+                      <input className="ci-mini grow" list="roomlist" placeholder="Room — pick or type" value={p.room} onChange={(e) => patch(p.uid, { room: e.target.value })} />
                     </div>
                     <input className="ci-mini" placeholder="Style notes — exactly how it should look" value={p.notes} onChange={(e) => patch(p.uid, { notes: e.target.value })} />
                   </div>
@@ -2419,6 +2471,12 @@ function Style() {
       .nearby-row { display:flex; flex-direction:column; gap:2px; font-size:12px; padding:5px 0; border-bottom:1px solid #1C3A60; }
       .nearby-row b { color:#8CDCAA; font-size:11px; }
       .nearby-row span { color:#C6DCF0; line-height:1.45; }
+      .guide-scrim { position:fixed; inset:0; background:rgba(5,15,30,0.8); z-index:50; display:flex; align-items:center; justify-content:center; padding:18px; }
+      .guide { background:#102C4E; border:2px solid #FF7A29; max-width:480px; padding:22px; }
+      .guide h3 { font-size:20px; font-weight:900; margin-bottom:12px; }
+      .guide p { font-size:13.5px; line-height:1.6; color:#C6DCF0; margin-bottom:12px; }
+      .guide b { color:#FF9A52; }
+      .addroom-row { display:flex; gap:6px; margin-bottom:9px; }
       .diag-strip { font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:1px; color:#56789E; margin-top:7px; line-height:1.6; }
       .pin-bar { margin-top:10px; border:1.5px dashed #FF7A29; padding:10px; background:rgba(255,122,41,0.05); }
       .pin-label { font-size:13px; line-height:1.45; margin-bottom:9px; }
