@@ -43,7 +43,39 @@ const setApiKey = (k) => { try { localStorage.setItem("tapacasa_api_key", k.trim
 const SITE_KEYS = {
   google: "AIzaSyDiASNmASU6JBNUfhswoySYFgCwfxn9fFI",
   mapbox: "pk.eyJ1IjoicG9zZXk2MjgiLCJhIjoiY21yODBycmYzMWhwbDJ4cHc1M3NsdzcyNCJ9.UiRU2R-Kky2X5joV54Jrhg",
+  /* Accounts & cloud saves (free): supabase.com → new project → run the SQL in
+     README → paste Project URL + anon public key here. Anon keys are designed
+     to be public; row-level security keeps each user's data private. */
+  supabaseUrl: "",
+  supabaseAnon: "",
 };
+
+/* ── Supabase cloud accounts (email + password) ── */
+const sbOn = () => !!(SITE_KEYS.supabaseUrl && SITE_KEYS.supabaseAnon);
+const sbSession = { get: () => { try { return JSON.parse(localStorage.getItem("tapacasa_sb") || "null"); } catch { return null; } }, set: (v) => { try { v ? localStorage.setItem("tapacasa_sb", JSON.stringify(v)) : localStorage.removeItem("tapacasa_sb"); } catch { /* ok */ } } };
+async function sbAuth(mode, email, password) {
+  const url = mode === "up" ? `${SITE_KEYS.supabaseUrl}/auth/v1/signup` : `${SITE_KEYS.supabaseUrl}/auth/v1/token?grant_type=password`;
+  const r = await fetchT(url, { method: "POST", headers: { apikey: SITE_KEYS.supabaseAnon, "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) }, 12000);
+  const d = await r.json();
+  if (d.error || d.error_description || d.msg) throw new Error(d.error_description || d.msg || d.error?.message || "auth failed");
+  const tok = d.access_token || d.session?.access_token;
+  const user = d.user || d.session?.user;
+  if (!tok) { if (mode === "up") return { needsConfirm: true }; throw new Error("no session"); }
+  sbSession.set({ token: tok, email: user?.email || email, uid: user?.id });
+  return { ok: true };
+}
+async function sbRest(path, opts = {}) {
+  const ses = sbSession.get();
+  const r = await fetchT(`${SITE_KEYS.supabaseUrl}/rest/v1/${path}`, {
+    ...opts,
+    headers: { apikey: SITE_KEYS.supabaseAnon, Authorization: `Bearer ${ses?.token || SITE_KEYS.supabaseAnon}`, "Content-Type": "application/json", Prefer: "return=representation,resolution=merge-duplicates", ...(opts.headers || {}) },
+  }, 12000);
+  if (r.status === 401) { sbSession.set(null); throw new Error("session expired — sign in again"); }
+  return r.status === 204 ? [] : r.json();
+}
+const cloudList = () => sbRest("projects?select=id,name,updated_at,data&order=updated_at.desc");
+const cloudSave = (name, data) => sbRest("projects?on_conflict=user_id,name", { method: "POST", body: JSON.stringify({ name, data, updated_at: new Date().toISOString() }) });
+const cloudDelete = (id) => sbRest(`projects?id=eq.${id}`, { method: "DELETE" });
 const getK = (n) => { try { return localStorage.getItem("tapacasa_" + n) || SITE_KEYS[n] || ""; } catch { return SITE_KEYS[n] || ""; } };
 const setK = (n, v) => { try { localStorage.setItem("tapacasa_" + n, (v || "").trim()); } catch { /* no-op */ } };
 /* satellite tiles: Mapbox HD when a key is saved, Esri otherwise */
@@ -575,6 +607,7 @@ function ThreeDView({ location, items, viewFt, onSnapshot, selectedUid, onSelect
   const satCache = useRef({});
   const [status3d, setStatus3d] = useState("loading");
   const [camMode, setCamMode] = useState("orbit");
+  const [sunHour, setSunHour] = useState(14);
   const knobRef = useRef(null);
   const itemsKey = JSON.stringify(items.map((i) => [i.itemId, i.fp, i.rot, Math.round(i.x), Math.round(i.y), i.landscape ? 1 : 0, i.style || 0]));
   const selItem = items.find((i) => i.uid === selectedUid);
@@ -630,7 +663,22 @@ function ThreeDView({ location, items, viewFt, onSnapshot, selectedUid, onSelect
       scene.fog = new THREE.Fog("#dfe9f0", winW * 1.8, winW * 5);
       scene.add(new THREE.HemisphereLight(0xe8f0f8, 0x5b7350, 0.75));
       const sun = new THREE.DirectionalLight(0xfff0d8, 1.35);
-      sun.position.set(winW * 0.55, winW * 0.8, winW * 0.3);
+      const latSun = ((location.coords?.lat ?? location.polygon?.anchor?.lat0 ?? 40) * Math.PI) / 180;
+      const dayN = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
+      const decl = (23.44 * Math.PI / 180) * Math.sin((2 * Math.PI * (284 + dayN)) / 365);
+      const updateSun = (h) => {
+        const H = ((h - 12) * 15 * Math.PI) / 180;
+        const alt = Math.asin(Math.sin(latSun) * Math.sin(decl) + Math.cos(latSun) * Math.cos(decl) * Math.cos(H));
+        const azS = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(latSun) - Math.tan(decl) * Math.cos(latSun));
+        const az = azS + Math.PI; /* from north */
+        const R = winW * 1.2;
+        const a2 = Math.max(alt, 0.06);
+        sun.position.set(R * Math.cos(a2) * Math.sin(az), R * Math.sin(a2), -R * Math.cos(a2) * Math.cos(az));
+        const day = Math.max(0, Math.sin(alt));
+        sun.intensity = 0.25 + day * 1.25;
+        sun.color.setHSL(0.09 + day * 0.045, 0.55 - day * 0.35, 0.62 + day * 0.16);
+      };
+      updateSun(14);
       sun.castShadow = true;
       sun.shadow.mapSize.set(2048, 2048);
       const sc = Math.max(winW, winD) * 0.8;
@@ -649,10 +697,27 @@ function ThreeDView({ location, items, viewFt, onSnapshot, selectedUid, onSelect
         if (d[0] || d[1]) ground.setRotationFromAxisAngle(new THREE.Vector3(d[1], 0, -d[0]).normalize(), Math.atan(Math.min(0.35, t.slopePct / 100)));
       }
       const pad = Math.max(winW, winD) * 0.6;
-      const groundMesh = new THREE.Mesh(new THREE.PlaneGeometry(winW + pad * 2, winD + pad * 2), new THREE.MeshStandardMaterial({ color: "#67905c", roughness: 1 }));
+      let groundH = () => 0; /* real heights swap in when the grid arrives */
+      const displace = (mesh, gw, gd) => {
+        const pos = mesh.geometry.attributes.position;
+        for (let i = 0; i < pos.count; i++) pos.setZ(i, groundH(pos.getX(i), -pos.getY(i)));
+        pos.needsUpdate = true;
+        mesh.geometry.computeVertexNormals();
+      };
+      const groundMesh = new THREE.Mesh(new THREE.PlaneGeometry(winW + pad * 2, winD + pad * 2, 40, 30), new THREE.MeshStandardMaterial({ color: "#67905c", roughness: 1 }));
       groundMesh.rotation.x = -Math.PI / 2;
       groundMesh.receiveShadow = true;
       ground.add(groundMesh);
+      const liftAll = () => {
+        displace(groundMesh);
+        satMeshRef && displace(satMeshRef);
+        items3d.forEach((g) => { if (g.userData.cx != null) g.position.y = groundH(g.userData.cx, g.userData.cz); });
+        extras.children.forEach(() => {});
+        extras.position.y = groundH(0, 0);
+        postList.forEach((p) => { p.position.y = groundH(p.position.x, p.position.z) + 3; });
+      };
+      let satMeshRef = null;
+      const postList = [];
 
       const lat0 = poly?.anchor?.lat0 ?? location.coords?.lat;
       const anchor = poly?.anchor
@@ -663,11 +728,13 @@ function ThreeDView({ location, items, viewFt, onSnapshot, selectedUid, onSelect
       const applySat = (canvas) => {
         if (dead || !canvas) return;
         const tex = new THREE.CanvasTexture(canvas);
-        const satMesh = new THREE.Mesh(new THREE.PlaneGeometry(winW, winD), new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }));
+        const satMesh = new THREE.Mesh(new THREE.PlaneGeometry(winW, winD, 40, 30), new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }));
         satMesh.rotation.x = -Math.PI / 2;
-        satMesh.position.y = 0.15;
+        satMesh.position.y = 0.2;
         satMesh.receiveShadow = true;
         ground.add(satMesh);
+        satMeshRef = satMesh;
+        displace(satMesh);
       };
       if (anchor && lat0 != null) {
         const ck = `${anchor.topLat.toFixed(5)},${anchor.leftLon.toFixed(5)},${Math.round(winW)}`;
@@ -675,13 +742,26 @@ function ThreeDView({ location, items, viewFt, onSnapshot, selectedUid, onSelect
         else buildSatCanvas(anchor.topLat, anchor.leftLon, winW, winD, lat0, (c) => { if (c) satCache.current[ck] = c; applySat(c); });
       }
 
+      if (anchor && lat0 != null) {
+        fetchTerrainGrid(anchor.topLat, anchor.leftLon, winW, winD, lat0).then(({ grid, nx, nz }) => {
+          if (dead) return;
+          ground.rotation.set(0, 0, 0); /* real relief replaces the simple tilt */
+          groundH = (x, z) => {
+            const fx = Math.min(nx - 1.001, Math.max(0, ((x + winW / 2) / winW) * (nx - 1)));
+            const fz = Math.min(nz - 1.001, Math.max(0, ((z + winD / 2) / winD) * (nz - 1)));
+            const i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j;
+            return grid[j][i] * (1 - u) * (1 - v) + grid[j][i + 1] * u * (1 - v) + grid[j + 1][i] * (1 - u) * v + grid[j + 1][i + 1] * u * v;
+          };
+          liftAll();
+        }).catch(() => { /* keep tilt fallback */ });
+      }
       const boundary = poly ? poly.pts.map(([px, py]) => [px - winW / 2, py - winD / 2]) :
         [[-winW / 2, -winD / 2], [winW / 2, -winD / 2], [winW / 2, winD / 2], [-winW / 2, winD / 2]];
       const postMat = new THREE.MeshStandardMaterial({ color: "#e8eef5" });
       boundary.forEach(([bx, bz]) => {
         const post = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 6, 8), postMat);
         post.position.set(bx, 3, bz); post.castShadow = true;
-        ground.add(post);
+        ground.add(post); postList.push(post);
       });
 
       const jitter = (hex, amt = 0.05) => { const c = new THREE.Color(hex); c.offsetHSL((Math.random() - 0.5) * 0.02, (Math.random() - 0.5) * amt, (Math.random() - 0.5) * amt); return c; };
@@ -828,6 +908,7 @@ function ThreeDView({ location, items, viewFt, onSnapshot, selectedUid, onSelect
         const dep = it.rot ? it.fp[0] : it.fp[1];
         const cx = it.x + w / 2 - winW / 2;
         const cz = it.y + dep / 2 - winD / 2;
+        grp.userData.cx = cx; grp.userData.cz = cz;
         const id = it.itemId || "";
         if (id === "house") mainHouse = [cx, cz, w, dep];
         if (CLEAR_IDS[id]) { M(grp, new THREE.BoxGeometry(w, 0.8, dep), mat("#a8906a", { roughness: 1 }), cx, 0.5, cz); return; }
@@ -1011,6 +1092,7 @@ function ThreeDView({ location, items, viewFt, onSnapshot, selectedUid, onSelect
 
       api.current = {
         mv, stick,
+        setSun: (h) => updateSun(h),
         setMode: (m) => { mode = m; applyCam(); },
         reset: () => { orbit.az = 0.85; orbit.el = 0.5; orbit.dist = Math.max(winW, winD) * 1.15; orbit.vaz = 0; orbit.vel = 0; walk.yaw = Math.PI; walk.pitch = -0.03; walk.pos.set(0, 5.8, winD * 0.48); applyCam(); },
         snap: () => {
@@ -1040,6 +1122,7 @@ function ThreeDView({ location, items, viewFt, onSnapshot, selectedUid, onSelect
             const fx = Math.sin(walk.yaw), fz = Math.cos(walk.yaw);
             walk.pos.x = Math.max(-lim.x, Math.min(lim.x, walk.pos.x + fwd * fx * SPEED + strafe * fz * SPEED));
             walk.pos.z = Math.max(-lim.z, Math.min(lim.z, walk.pos.z + fwd * fz * SPEED - strafe * fx * SPEED));
+            walk.pos.y = groundH(walk.pos.x, walk.pos.z) + 5.8;
             applyCam();
           }
         }
@@ -1061,6 +1144,11 @@ function ThreeDView({ location, items, viewFt, onSnapshot, selectedUid, onSelect
         <button className={camMode === "walk" ? "ctab on" : "ctab"} onClick={() => switchMode("walk")}>🚶 Walk the land</button>
         <button className="btn-ghost xs" onClick={() => api.current.reset?.()}>Reset view</button>
         <button className="btn-ghost xs" onClick={() => api.current.snap?.()}>📸 Snapshot</button>
+        <label className="sun-lab" title="Drag to move the sun through the day — real shadows for this latitude">
+          ☀ {String(Math.floor(sunHour)).padStart(2, "0")}:{sunHour % 1 ? "30" : "00"}
+          <input type="range" min="5.5" max="20.5" step="0.5" value={sunHour}
+            onChange={(e) => { const h = +e.target.value; setSunHour(h); api.current.setSun?.(h); }} />
+        </label>
       </div>
       {canStyle && (
         <div className="style-bar">
@@ -1234,6 +1322,24 @@ const HILLSIDE_ITEM = { id: "hillside", name: "Hillside Foundation & Retaining",
 
 /* Real terrain from the free Open-Elevation API: sample center + N/S/E/W,
    derive elevation, average slope %, and downhill aspect. */
+/* dense elevation grid for true 3D relief (Google via proxy, free fallback) */
+async function fetchTerrainGrid(topLat, leftLon, winW, winD, lat0, nx = 8, nz = 6) {
+  const ftLat = 110540 * 3.28084;
+  const ftLon = 111320 * Math.cos((lat0 * Math.PI) / 180) * 3.28084;
+  const pts = [];
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++)
+    pts.push([topLat - ((j + 0.5) / nz) * (winD / ftLat), leftLon + ((i + 0.5) / nx) * (winW / ftLon)]);
+  const locs = pts.map((p) => `${p[0].toFixed(5)},${p[1].toFixed(5)}`).join("|");
+  let d;
+  try { d = await svcFetch("google", { type: "elevation", params: { locations: locs } }, 9000); if (!d?.results?.length) throw new Error("empty"); }
+  catch { const r = await fetchT("https://api.open-elevation.com/api/v1/lookup?locations=" + locs, {}, 10000); d = await r.json(); }
+  const el = d.results.map((x) => x.elevation * 3.28084);
+  const min = Math.min(...el);
+  const grid = [];
+  for (let j = 0; j < nz; j++) grid.push(el.slice(j * nx, (j + 1) * nx).map((v) => v - min));
+  return { grid, nx, nz };
+}
+
 async function fetchTerrain(lat, lon, acres) {
   const rM = Math.max(60, Math.sqrt(acres * 4046.86) / 2); // half-parcel radius, meters
   const dLat = rM / 111320;
@@ -1411,6 +1517,43 @@ function CompareView({ a, b, onClose, onOpen }) {
   );
 }
 
+function AccountBar({ onSession }) {
+  const [ses, setSes] = useState(sbSession.get());
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  if (!sbOn()) return null;
+  const go = async (mode) => {
+    setBusy(true); setMsg("");
+    try {
+      const r = await sbAuth(mode, email.trim(), pass);
+      if (r.needsConfirm) setMsg("Check your email to confirm the account, then sign in.");
+      else { setSes(sbSession.get()); onSession?.(); }
+    } catch (e) { setMsg(e.message || "failed"); }
+    setBusy(false);
+  };
+  if (ses) return (
+    <div className="keybar ok">☁ {ses.email} — projects sync to your account on every device.
+      <button className="ci-remove" onClick={() => { sbSession.set(null); setSes(null); onSession?.(); }}>Sign out</button>
+    </div>
+  );
+  return (
+    <div className="keybar">
+      <span>☁ <b>Free account</b> — save designs to the cloud and open them on any device:</span>
+      <div className="ai-row">
+        <input className="ai-input" type="email" placeholder="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <input className="ai-input" type="password" placeholder="password" value={pass} onChange={(e) => setPass(e.target.value)} />
+      </div>
+      <div className="ai-row">
+        <button className="btn-orange sm" disabled={busy} onClick={() => go("in")}>Sign in</button>
+        <button className="btn-ghost xs" disabled={busy} onClick={() => go("up")}>Create account</button>
+      </div>
+      {msg && <div className="ai-err">{msg}</div>}
+    </div>
+  );
+}
+
 function IntegrationsBar() {
   const [open, setOpen] = useState(false);
   const [vals, setVals] = useState({ mapbox: getK("mapbox"), regrid: getK("regrid"), google: getK("google") });
@@ -1553,6 +1696,7 @@ function MapPicker({ onParcel }) {
 
   const placePin = (lat, lon, label) => {
     setPin({ lat, lon, label });
+    if (label && !/Locating|Mystery/.test(label)) remember(lat, lon, label);
     const L = window.L;
     if (!L || !mapRef.current) return;
     if (markerRef.current) markerRef.current.setLatLng([lat, lon]);
@@ -1680,6 +1824,34 @@ Be realistic: urban/suburban land is far pricier per acre than rural; use the ac
 
   /* 🎲 drop anywhere on Earth (land-biased, GeoGuessr-style — but for building) */
   const [rolling, setRolling] = useState(false);
+  const [scout, setScout] = useState(null);
+  const [recent, setRecent] = useState(() => { try { return JSON.parse(localStorage.getItem("tapacasa_recent") || "[]"); } catch { return []; } });
+  const remember = (lat, lon, label) => {
+    const short = (label || "").split(",").slice(0, 3).join(",");
+    setRecent((r) => {
+      const next = [{ lat, lon, label: short }, ...r.filter((x) => x.label !== short)].slice(0, 5);
+      try { localStorage.setItem("tapacasa_recent", JSON.stringify(next)); } catch { /* ok */ }
+      return next;
+    });
+  };
+  const scoutMarket = async () => {
+    if (!pin) return;
+    setScout({ busy: true });
+    try {
+      const text = await askAI(`You are a real-estate market analyst. For the area around "${pin.label}", produce a realistic snapshot of 4 representative properties currently typical of that market (mix of land and homes for sale). Respond ONLY with JSON, no fences: {"listings":[{"title":"short evocative title","kind":"land" or "home","acres":number,"beds":number or 0,"sqft":number or 0,"price":realistic USD number,"taxRate":local effective rate as decimal,"blurb":"one line"}]} — use the actual local market price level.`);
+      const d = pickJSON(text);
+      setScout({ items: (d.listings || []).slice(0, 5) });
+    } catch (e) { setScout({ err: "Market scout failed: " + (e.message || "?") }); }
+  };
+  const designListing = (l) => {
+    onParcel({
+      id: "mkt-" + Date.now(), name: l.title || "Market Listing", region: pin.label.split(",").slice(-3).join(",").trim(),
+      acres: l.acres || 0.5, price: l.price || 400000, taxRate: l.taxRate || 0.011,
+      vibe: (l.blurb || "AI market snapshot") + " · representative listing — verify via Zillow/Realtor",
+      coords: { lat: pin.lat, lon: pin.lon }, mapLabel: pin.label,
+      existingHome: l.kind === "home" ? { value: Math.round((l.price || 400000) * 0.72), sqft: l.sqft || 2200 } : null,
+    });
+  };
   const randomSpot = async () => {
     setRolling(true);
     let placedOk = false;
@@ -1739,6 +1911,14 @@ Be realistic: urban/suburban land is far pricier per acre than rural; use the ac
             </>}
         {tracedPoly && !tracing && <button className="btn-ghost xs" onClick={clearTrace}>Clear trace</button>}
       </div>
+      {recent.length > 0 && (
+        <div className="recent-row">
+          <span className="ai-label" style={{ margin: 0 }}>RECENT:</span>
+          {recent.map((r) => (
+            <button key={r.label} className="ctab" onClick={() => { placePin(r.lat, r.lon, r.label); mapRef.current?.setView([r.lat, r.lon], 15); }}>{r.label.split(",")[0]}</button>
+          ))}
+        </div>
+      )}
       {tracing && <div className="trace-hint">Zoom into your lot on satellite, then tap each corner of the real boundary. Finish with 3+ points — acreage is computed from your trace.</div>}
       <div className="diag-strip">
         CONNECTIONS — MAP TILES: {status === "ready" ? "OK" : status === "tiles-blocked" ? "BLOCKED" : status.toUpperCase()} · GEO SEARCH: {diag.geo} · AI LINK: {diag.ai}
@@ -1747,6 +1927,7 @@ Be realistic: urban/suburban land is far pricier per acre than rural; use the ac
         {diag.ai === "BLOCKED" && !getApiKey() && " — paste an Anthropic API key below to enable AI features on this site."}
       </div>
       <ApiKeyBar onSaved={() => setDiag((x) => ({ ...x, ai: "UNTESTED" }))} />
+      <AccountBar onSession={() => refreshProjects()} />
       <IntegrationsBar />
       {results.length > 0 && (
         <div className="geo-results">
@@ -1815,6 +1996,28 @@ Be realistic: urban/suburban land is far pricier per acre than rural; use the ac
             <span className="muted-note">— check the recorded plat, then trace it here for an exact match</span>
           </div>
           {apprErr && <div className="ai-err">{apprErr}</div>}
+          <button className="btn-ghost wide" onClick={scoutMarket} disabled={scout?.busy}>
+            {scout?.busy ? "Scouting the market…" : "🔎 Scout the market here — real-style listings to design"}
+          </button>
+          {scout?.err && <div className="ai-err">{scout.err}</div>}
+          {scout?.items && (
+            <div className="scout-list">
+              <div className="ai-label">AI MARKET SNAPSHOT — REPRESENTATIVE OF THIS AREA · VERIFY REAL LISTINGS VIA THE LINKS ABOVE</div>
+              {scout.items.map((l, i) => (
+                <div key={i} className="scout-card">
+                  <div className="ic-top">
+                    <div>
+                      <div className="ic-name">{l.kind === "home" ? "🏠" : "🌲"} {l.title}</div>
+                      <div className="ic-vendor">{l.acres} AC{l.beds ? ` · ${l.beds} BD · ${(l.sqft || 0).toLocaleString()} SQFT` : ""} · TAX {((l.taxRate || 0.01) * 100).toFixed(2)}%</div>
+                    </div>
+                    <div className="ic-price">{fmt(l.price)}</div>
+                  </div>
+                  <div className="ic-desc">{l.blurb}</div>
+                  <button className="btn-orange sm" onClick={() => designListing(l)}>🏗 Design this property</button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -2047,8 +2250,18 @@ function TapaCasaApp() {
   const redo = () => { if (!future.current.length) return; past.current.push(JSON.stringify(placedRef.current)); setPlaced(JSON.parse(future.current.pop())); };
   const resetHistory = () => { past.current = []; future.current = []; };
 
-  useEffect(() => {
+  const refreshProjects = async () => {
+    if (sbOn() && sbSession.get()) {
+      try {
+        const rows = await cloudList();
+        setProjects(rows.map((r) => ({ id: r.id, cloud: true, name: r.name, savedAt: +new Date(r.updated_at), ...(r.data || {}) })));
+        return;
+      } catch { /* fall back to local */ }
+    }
     loadProjects().then(setProjects);
+  };
+  useEffect(() => {
+    refreshProjects();
     try {
       const h = window.location.hash;
       if (h && h.startsWith("#d=")) {
@@ -2195,6 +2408,16 @@ Features:\n${spec || "Vacant land only."}`);
   /* ── SAVE / LOAD ── */
   const saveProject = async () => {
     const name = projName.trim() || `${location.name} — ${new Date().toLocaleDateString()}`;
+    if (sbOn() && sbSession.get()) {
+      try {
+        await cloudSave(name, { location, placed, customItems, customRooms });
+        await refreshProjects();
+        setSaveMsg(`☁ Saved "${name}" to your account`);
+        setProjName("");
+        setTimeout(() => setSaveMsg(""), 3500);
+        return;
+      } catch (e) { setSaveMsg("Cloud save failed (" + (e.message || "?") + ") — saved locally instead."); }
+    }
     const next = [{ id: Date.now(), name, savedAt: Date.now(), location, placed, customItems, customRooms }, ...projects.filter((p) => p.name !== name)].slice(0, 12);
     setProjects(next);
     const ok = await saveProjects(next);
@@ -2207,6 +2430,8 @@ Features:\n${spec || "Vacant land only."}`);
     setSelected(null); setMobileTab("plan");
   };
   const deleteProject = async (id) => {
+    const proj = projects.find((p) => p.id === id);
+    if (proj?.cloud) { try { await cloudDelete(id); } catch { /* ok */ } await refreshProjects(); return; }
     const next = projects.filter((p) => p.id !== id);
     setProjects(next); await saveProjects(next);
   };
@@ -2255,7 +2480,7 @@ Features:\n${spec || "Vacant land only."}`);
         <WelcomeGuide open={showGuide} onClose={closeGuide} />
         <header className="hdr">
           <div className="hdr-mark">⌂</div>
-          <div style={{ flex: 1 }}><h1>TapaCasa</h1><p className="hdr-sub">SHEET 1 — SITE SELECTION · ANYWHERE ON EARTH · v16-GUIDE</p></div>
+          <div style={{ flex: 1 }}><h1>TapaCasa</h1><p className="hdr-sub">SHEET 1 — SITE SELECTION · ANYWHERE ON EARTH · v17-HORIZON</p></div>
           <button className="btn-ghost xs" onClick={() => setShowGuide(true)}>? How it works</button>
         </header>
         <div className="loc-wrap">
@@ -2699,6 +2924,8 @@ function Style() {
       .int-toggle { background:none; border:none; color:#9DBEDD; cursor:pointer; font-family:'IBM Plex Mono',monospace; font-size:11px; padding:0; text-align:left; }
       .threed-holder { position:relative; border:1.5px solid #2A4A72; min-height:320px; background:#0A1F38; }
       .threed-holder canvas { display:block; width:100%; height:auto; }
+      .sun-lab { display:flex; align-items:center; gap:6px; font-family:'IBM Plex Mono',monospace; font-size:11px; color:#FFD9A0; }
+      .sun-lab input { width:110px; accent-color:#FF9A52; }
       .style-bar { display:flex; align-items:center; gap:6px; flex-wrap:wrap; border:1.5px solid #FF7A29; background:rgba(255,122,41,0.06); padding:7px 9px; margin-bottom:8px; }
       .style-name { font-size:12.5px; font-weight:700; margin-right:4px; }
       .style-lab { font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:1px; color:#7FA8CC; }
@@ -2732,6 +2959,9 @@ function Style() {
       .guide p { font-size:13.5px; line-height:1.6; color:#C6DCF0; margin-bottom:12px; }
       .guide b { color:#FF9A52; }
       .addroom-row { display:flex; gap:6px; margin-bottom:9px; }
+      .recent-row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:8px; }
+      .scout-list { margin-top:10px; }
+      .scout-card { border:1.5px solid #2A4A72; background:#102C4E; padding:11px; margin-top:8px; }
       .diag-strip { font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:1px; color:#56789E; margin-top:7px; line-height:1.6; }
       .pin-bar { margin-top:10px; border:1.5px dashed #FF7A29; padding:10px; background:rgba(255,122,41,0.05); }
       .pin-label { font-size:13px; line-height:1.45; margin-bottom:9px; }
