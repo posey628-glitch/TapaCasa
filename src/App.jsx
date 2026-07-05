@@ -512,11 +512,17 @@ function PhotorealView({ location, items }) {
             viewer.entities.add({ position: Cesium.Cartesian3.fromDegrees(lo, la, h / 2), ellipsoid: { radii: new Cesium.Cartesian3(w / 2, dep / 2, h / 2), material: Cesium.Color.fromCssColorString("#3e7d4f").withAlpha(0.95), heightReference: RTG } });
             return;
           }
-          let color = "#f2eee6", h = (BLDG_H[id] || 14) * M;
-          if (WATER_IDS[id]) { color = "#2f9fd4"; h = 0.5; }
+          const sty = getStyle(it);
+          let color = sty.wall, h = (BLDG_H[id] || 14) * M;
+          let roofy = !SLAB_IDS[id] && !WATER_IDS[id];
+          if (WATER_IDS[id]) { color = "#2f9fd4"; h = 0.5; roofy = false; }
           else if (SLAB_IDS[id]) { color = SLAB_IDS[id]; h = 0.35; }
           else if (it.existing) color = "#c9c2b4";
-          viewer.entities.add({ position: Cesium.Cartesian3.fromDegrees(lo, la, h / 2), box: { dimensions: new Cesium.Cartesian3(w, dep, h), material: Cesium.Color.fromCssColorString(color).withAlpha(0.88), outline: true, outlineColor: Cesium.Color.fromCssColorString("#14243D").withAlpha(0.6), heightReference: RTG } });
+          viewer.entities.add({ position: Cesium.Cartesian3.fromDegrees(lo, la, h / 2), box: { dimensions: new Cesium.Cartesian3(w, dep, h), material: Cesium.Color.fromCssColorString(color).withAlpha(0.92), outline: true, outlineColor: Cesium.Color.fromCssColorString("#14243D").withAlpha(0.6), heightReference: RTG } });
+          if (roofy && h > 2) {
+            viewer.entities.add({ position: Cesium.Cartesian3.fromDegrees(lo, la, h + (sty.roofT === "flat" ? 0.2 : Math.min(w, dep) * 0.18)), cylinder: { length: sty.roofT === "flat" ? 0.4 : Math.min(w, dep) * 0.36, topRadius: 0.01, bottomRadius: Math.max(w, dep) * 0.62, material: Cesium.Color.fromCssColorString(sty.roofC).withAlpha(0.95), heightReference: RTG, numberOfVerticalLines: 0 } });
+            viewer.entities.add({ position: Cesium.Cartesian3.fromDegrees(lo, la, h * 0.55), box: { dimensions: new Cesium.Cartesian3(w * 1.02, dep * 1.02, Math.min(1.4, h * 0.3)), material: Cesium.Color.fromCssColorString("#2e4757").withAlpha(0.9), heightReference: RTG } });
+          }
         });
 
         viewer.camera.flyTo({
@@ -547,7 +553,22 @@ function PhotorealView({ location, items }) {
   );
 }
 
-function ThreeDView({ location, items, viewFt, onSnapshot }) {
+const STYLE_DEFAULTS = {
+  house: { wall: "#f2eee6", roofC: "#454e59", roofT: "gable" },
+  guest: { wall: "#e7ddc9", roofC: "#5a4638", roofT: "gable" },
+  barn: { wall: "#8f3b32", roofC: "#3c3f45", roofT: "gable" },
+  retail: { wall: "#c9ced4", roofC: "#6a6f76", roofT: "flat" },
+  warehouse: { wall: "#aeb4bb", roofC: "#7d838a", roofT: "flat" },
+  bowl: { wall: "#d9d2c2", roofC: "#454e59", roofT: "flat" },
+  court: { wall: "#c9c2ae", roofC: "#4a5560", roofT: "gable" },
+  green: { wall: "#cfe3ea", roofC: "#cfe3ea", roofT: "gable" },
+};
+const getStyle = (it) => ({ ...(STYLE_DEFAULTS[it.itemId] || { wall: "#e9e2d3", roofC: "#4a525c", roofT: "gable" }), ...(it.style || {}) });
+const WALL_SWATCHES = ["#f2eee6", "#dfd6c3", "#b9c4cc", "#8f3b32", "#3f4753", "#f7f7f2"];
+const ROOF_SWATCHES = ["#454e59", "#7a4a35", "#2f4a3e", "#8a8f96"];
+const BUILDABLE = { house: 1, guest: 1, barn: 1, retail: 1, warehouse: 1, bowl: 1, court: 1, green: 1 };
+
+function ThreeDView({ location, items, viewFt, onSnapshot, selectedUid, onSelectItem, onStyle }) {
   const mountRef = useRef(null);
   const api = useRef({});
   const camModeRef = useRef("orbit");
@@ -555,11 +576,10 @@ function ThreeDView({ location, items, viewFt, onSnapshot }) {
   const [status3d, setStatus3d] = useState("loading");
   const [camMode, setCamMode] = useState("orbit");
   const knobRef = useRef(null);
-  const itemsKey = JSON.stringify(items.map((i) => [i.itemId, i.fp, i.rot, Math.round(i.x), Math.round(i.y), i.landscape ? 1 : 0]));
+  const itemsKey = JSON.stringify(items.map((i) => [i.itemId, i.fp, i.rot, Math.round(i.x), Math.round(i.y), i.landscape ? 1 : 0, i.style || 0]));
+  const selItem = items.find((i) => i.uid === selectedUid);
 
   const switchMode = (m) => { camModeRef.current = m; setCamMode(m); api.current.setMode?.(m); };
-
-  /* analog joystick for walk mode */
   const joyStart = useRef(null);
   const joyDown = (e) => { e.preventDefault(); joyStart.current = [e.clientX, e.clientY]; e.currentTarget.setPointerCapture?.(e.pointerId); };
   const joyMove = (e) => {
@@ -599,16 +619,15 @@ function ThreeDView({ location, items, viewFt, onSnapshot }) {
       mountRef.current.innerHTML = "";
       mountRef.current.appendChild(renderer.domElement);
 
-      /* gradient sky */
       const skyC = document.createElement("canvas");
       skyC.width = 8; skyC.height = 256;
-      const sg = skyC.getContext("2d").createLinearGradient(0, 0, 0, 256);
+      const sctx = skyC.getContext("2d");
+      const sg = sctx.createLinearGradient(0, 0, 0, 256);
       sg.addColorStop(0, "#6ea7d6"); sg.addColorStop(0.6, "#bcd7ea"); sg.addColorStop(1, "#e8eff4");
-      const sctx = skyC.getContext("2d"); sctx.fillStyle = sg; sctx.fillRect(0, 0, 8, 256);
+      sctx.fillStyle = sg; sctx.fillRect(0, 0, 8, 256);
       const scene = new THREE.Scene();
       scene.background = new THREE.CanvasTexture(skyC);
       scene.fog = new THREE.Fog("#dfe9f0", winW * 1.8, winW * 5);
-
       scene.add(new THREE.HemisphereLight(0xe8f0f8, 0x5b7350, 0.75));
       const sun = new THREE.DirectionalLight(0xfff0d8, 1.35);
       sun.position.set(winW * 0.55, winW * 0.8, winW * 0.3);
@@ -627,14 +646,10 @@ function ThreeDView({ location, items, viewFt, onSnapshot }) {
       if (t && t.slopePct > 0.5) {
         const dirMap = { N: [0, -1], S: [0, 1], E: [1, 0], W: [-1, 0], NE: [0.707, -0.707], NW: [-0.707, -0.707], SE: [0.707, 0.707], SW: [-0.707, 0.707] };
         const d = dirMap[t.downhill] || [0, 0];
-        if (d[0] || d[1]) {
-          const angle = Math.atan(Math.min(0.35, t.slopePct / 100));
-          ground.setRotationFromAxisAngle(new THREE.Vector3(d[1], 0, -d[0]).normalize(), angle);
-        }
+        if (d[0] || d[1]) ground.setRotationFromAxisAngle(new THREE.Vector3(d[1], 0, -d[0]).normalize(), Math.atan(Math.min(0.35, t.slopePct / 100)));
       }
       const pad = Math.max(winW, winD) * 0.6;
-      const groundMesh = new THREE.Mesh(new THREE.PlaneGeometry(winW + pad * 2, winD + pad * 2),
-        new THREE.MeshStandardMaterial({ color: "#67905c", roughness: 1 }));
+      const groundMesh = new THREE.Mesh(new THREE.PlaneGeometry(winW + pad * 2, winD + pad * 2), new THREE.MeshStandardMaterial({ color: "#67905c", roughness: 1 }));
       groundMesh.rotation.x = -Math.PI / 2;
       groundMesh.receiveShadow = true;
       ground.add(groundMesh);
@@ -648,9 +663,7 @@ function ThreeDView({ location, items, viewFt, onSnapshot }) {
       const applySat = (canvas) => {
         if (dead || !canvas) return;
         const tex = new THREE.CanvasTexture(canvas);
-        tex.anisotropy = renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 1;
-        const satMesh = new THREE.Mesh(new THREE.PlaneGeometry(winW, winD),
-          new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }));
+        const satMesh = new THREE.Mesh(new THREE.PlaneGeometry(winW, winD), new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }));
         satMesh.rotation.x = -Math.PI / 2;
         satMesh.position.y = 0.15;
         satMesh.receiveShadow = true;
@@ -662,142 +675,280 @@ function ThreeDView({ location, items, viewFt, onSnapshot }) {
         else buildSatCanvas(anchor.topLat, anchor.leftLon, winW, winD, lat0, (c) => { if (c) satCache.current[ck] = c; applySat(c); });
       }
 
+      const boundary = poly ? poly.pts.map(([px, py]) => [px - winW / 2, py - winD / 2]) :
+        [[-winW / 2, -winD / 2], [winW / 2, -winD / 2], [winW / 2, winD / 2], [-winW / 2, winD / 2]];
+      const postMat = new THREE.MeshStandardMaterial({ color: "#e8eef5" });
+      boundary.forEach(([bx, bz]) => {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 6, 8), postMat);
+        post.position.set(bx, 3, bz); post.castShadow = true;
+        ground.add(post);
+      });
+
       const jitter = (hex, amt = 0.05) => { const c = new THREE.Color(hex); c.offsetHSL((Math.random() - 0.5) * 0.02, (Math.random() - 0.5) * amt, (Math.random() - 0.5) * amt); return c; };
       const mat = (c, o) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, ...(o || {}) });
-      const addMesh = (geo, m, x, y, z, noShadow) => { const mesh = new THREE.Mesh(geo, m); mesh.position.set(x, y, z); if (!noShadow) { mesh.castShadow = true; mesh.receiveShadow = true; } ground.add(mesh); return mesh; };
+      const M = (grp, geo, m, x, y, z, noShadow) => { const mesh = new THREE.Mesh(geo, m); mesh.position.set(x, y, z); if (!noShadow) { mesh.castShadow = true; mesh.receiveShadow = true; } grp.add(mesh); return mesh; };
 
-      const tree = (x, z, r, h, kind) => {
-        const s = 0.85 + Math.random() * 0.3;
-        r *= s; h *= s;
-        addMesh(new THREE.CylinderGeometry(r * 0.07, r * 0.11, h * 0.5, 6), mat("#6b4f35"), x, h * 0.25, z);
-        if (kind === 2) { addMesh(new THREE.ConeGeometry(r * 0.5, h * 0.55, 8), mat(jitter("#4c8f52")), x, h * 0.68, z); return; }
+      const tree = (grp, x, z, r, h, kind) => {
+        const s = 0.85 + Math.random() * 0.3; r *= s; h *= s;
+        M(grp, new THREE.CylinderGeometry(r * 0.07, r * 0.11, h * 0.5, 6), mat("#6b4f35"), x, h * 0.25, z);
+        if (kind === 2) { M(grp, new THREE.ConeGeometry(r * 0.5, h * 0.55, 8), mat(jitter("#4c8f52")), x, h * 0.68, z); return; }
         const cMat = mat(jitter("#3e7d4f", 0.09));
-        addMesh(new THREE.SphereGeometry(r * 0.5, 8, 6), cMat, x, h * 0.62, z);
-        addMesh(new THREE.SphereGeometry(r * 0.36, 8, 6), cMat, x + r * 0.28, h * 0.52, z + r * 0.15);
-        addMesh(new THREE.SphereGeometry(r * 0.32, 8, 6), cMat, x - r * 0.25, h * 0.55, z - r * 0.18);
+        M(grp, new THREE.SphereGeometry(r * 0.5, 8, 6), cMat, x, h * 0.62, z);
+        M(grp, new THREE.SphereGeometry(r * 0.36, 8, 6), cMat, x + r * 0.28, h * 0.52, z + r * 0.15);
+        M(grp, new THREE.SphereGeometry(r * 0.32, 8, 6), cMat, x - r * 0.25, h * 0.55, z - r * 0.18);
       };
-      const conifer = (x, z, h) => {
-        addMesh(new THREE.CylinderGeometry(0.5, 0.7, h * 0.25, 5), mat("#5d4630"), x, h * 0.12, z);
-        addMesh(new THREE.ConeGeometry(h * 0.16, h * 0.85, 7), mat(jitter("#2f6e42")), x, h * 0.55, z);
+      const conifer = (grp, x, z, h) => {
+        M(grp, new THREE.CylinderGeometry(0.5, 0.7, h * 0.25, 5), mat("#5d4630"), x, h * 0.12, z);
+        M(grp, new THREE.ConeGeometry(h * 0.16, h * 0.85, 7), mat(jitter("#2f6e42")), x, h * 0.55, z);
       };
-      const person = (x, z) => {
-        addMesh(new THREE.CylinderGeometry(0.7, 0.85, 4.2, 8), mat("#b4574a"), x, 2.1, z);
-        addMesh(new THREE.SphereGeometry(0.62, 8, 8), mat("#e3b18f"), x, 4.8, z);
+      const person = (grp, x, z) => {
+        M(grp, new THREE.CylinderGeometry(0.7, 0.85, 4.2, 8), mat("#b4574a"), x, 2.1, z);
+        M(grp, new THREE.SphereGeometry(0.62, 8, 8), mat("#e3b18f"), x, 4.8, z);
       };
-      const car = (x, z) => {
-        addMesh(new THREE.BoxGeometry(15, 3, 6.2), mat("#8fa3b8", { roughness: 0.35 }), x, 2.6, z);
-        addMesh(new THREE.BoxGeometry(8, 2.4, 5.6), mat("#7d90a5", { roughness: 0.3 }), x - 0.5, 5.1, z);
+      const car = (grp, x, z) => {
+        M(grp, new THREE.BoxGeometry(15, 3, 6.2), mat("#8fa3b8", { roughness: 0.35 }), x, 2.6, z);
+        M(grp, new THREE.BoxGeometry(8, 2.4, 5.6), mat("#7d90a5", { roughness: 0.3 }), x - 0.5, 5.1, z);
         [[-5, -3.1], [5, -3.1], [-5, 3.1], [5, 3.1]].forEach(([wx, wz]) => {
           const wheel = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 0.9, 12), mat("#22262b"));
-          wheel.rotation.x = Math.PI / 2;
-          wheel.position.set(x + wx, 1.3, z + wz);
-          wheel.castShadow = true;
-          ground.add(wheel);
+          wheel.rotation.x = Math.PI / 2; wheel.position.set(x + wx, 1.3, z + wz); wheel.castShadow = true; grp.add(wheel);
         });
       };
 
-      const building = (cx, cz, w, dep, hgt, existing) => {
-        const wallMat = existing ? mat("#c6bfb1") : mat(jitter("#f0ebe1", 0.03));
-        addMesh(new THREE.BoxGeometry(w, hgt, dep), wallMat, cx, hgt / 2, cz);
-        /* window bands per story + front door */
-        const glass = mat("#37424e", { roughness: 0.15, metalness: 0.4 });
-        const stories = Math.max(1, Math.round(hgt / 11));
-        for (let st = 0; st < stories; st++) {
-          const wy = (st + 0.55) * (hgt / stories);
-          addMesh(new THREE.BoxGeometry(w * 0.72, 3.4, dep + 0.5), glass, cx, wy, cz, true);
-          addMesh(new THREE.BoxGeometry(w + 0.5, 3.4, dep * 0.72), glass, cx, wy, cz, true);
+      /* ── ARCHITECTURAL BUILDER: real roofs, framed windows, doors, porches, chimneys ── */
+      const roofOn = (grp, cx, cz, w, dep, hgt, style) => {
+        const rc = mat(style.roofC, { roughness: 0.7 });
+        const ov = 1.6; /* eave overhang */
+        if (style.roofT === "flat") {
+          M(grp, new THREE.BoxGeometry(w + 1, 1.2, dep + 1), rc, cx, hgt + 0.6, cz);
+          M(grp, new THREE.BoxGeometry(w + 1, 2.4, 1), rc, cx, hgt + 1.2, cz - dep / 2);
+          M(grp, new THREE.BoxGeometry(w + 1, 2.4, 1), rc, cx, hgt + 1.2, cz + dep / 2);
+          return;
         }
-        addMesh(new THREE.BoxGeometry(4, 7.4, 0.6), mat("#5d4630"), cx, 3.7, cz + dep / 2 + 0.1, true);
-        const roofH = Math.min(w, dep) * 0.26;
-        const roof = new THREE.Mesh(new THREE.CylinderGeometry(0.001, Math.sqrt(2) * Math.min(w, dep) / 2, roofH, 4, 1), mat("#454e59", { roughness: 0.7 }));
-        roof.rotation.y = Math.PI / 4;
-        roof.scale.set((w + 2.5) / Math.min(w, dep), 1, (dep + 2.5) / Math.min(w, dep));
-        roof.position.set(cx, hgt + roofH / 2, cz);
-        roof.castShadow = true;
-        ground.add(roof);
+        if (style.roofT === "modern") {
+          const slab = M(grp, new THREE.BoxGeometry(w + ov * 2, 1.1, dep + ov * 2 + 3), rc, cx, hgt + Math.min(w, dep) * 0.09, cz);
+          slab.rotation.x = 0.12;
+          return;
+        }
+        if (style.roofT === "hip") {
+          const roofH = Math.min(w, dep) * 0.3;
+          const roof = new THREE.Mesh(new THREE.CylinderGeometry(0.001, Math.sqrt(2) * Math.min(w, dep) / 2, roofH, 4, 1), rc);
+          roof.rotation.y = Math.PI / 4;
+          roof.scale.set((w + ov * 2) / Math.min(w, dep), 1, (dep + ov * 2) / Math.min(w, dep));
+          roof.position.set(cx, hgt + roofH / 2, cz);
+          roof.castShadow = true; grp.add(roof);
+          return;
+        }
+        /* gable: two pitched slabs + ridge, gable-end infill */
+        const span = dep + ov * 2;
+        const roofH = dep * 0.32;
+        const slope = Math.hypot(span / 2, roofH) + 0.6;
+        const ang = Math.atan2(roofH, span / 2);
+        [-1, 1].forEach((side) => {
+          const slab = new THREE.Mesh(new THREE.BoxGeometry(w + ov * 2, 0.9, slope), rc);
+          slab.position.set(cx, hgt + roofH / 2, cz + side * span / 4);
+          slab.rotation.x = -side * ang;
+          slab.castShadow = true; slab.receiveShadow = true; grp.add(slab);
+        });
+        M(grp, new THREE.BoxGeometry(w + ov * 2, 1, 1.4), rc, cx, hgt + roofH, cz);
+        const gableMat = mat(style.wall);
+        [-1, 1].forEach((side) => {
+          const g = new THREE.Mesh(new THREE.CylinderGeometry(0.01, dep / 2, roofH - 0.4, 4, 1), gableMat);
+          g.rotation.y = Math.PI / 4;
+          g.scale.set(0.06, 1, 1);
+          g.position.set(cx + side * (w / 2 - 0.3), hgt + (roofH - 0.4) / 2, cz);
+          grp.add(g);
+        });
       };
 
+      const windowsOn = (grp, cx, cz, w, dep, hgt, stories) => {
+        const frame = mat("#f7f7f2", { roughness: 0.5 });
+        const glass = mat("#2e4757", { roughness: 0.12, metalness: 0.45 });
+        const put = (x, y, z, horiz) => {
+          M(grp, new THREE.BoxGeometry(horiz ? 4.4 : 0.7, 5, horiz ? 0.7 : 4.4), frame, x, y, z, true);
+          M(grp, new THREE.BoxGeometry(horiz ? 3.6 : 0.9, 4.2, horiz ? 0.9 : 3.6), glass, x, y, z, true);
+        };
+        for (let st = 0; st < stories; st++) {
+          const wy = (st + 0.55) * (hgt / stories);
+          const nx = Math.max(2, Math.floor(w / 13));
+          for (let i = 0; i < nx; i++) {
+            const wx = cx - w / 2 + (i + 0.5) * (w / nx);
+            put(wx, wy, cz - dep / 2, true);
+            put(wx, wy, cz + dep / 2, true);
+          }
+          const nz = Math.max(1, Math.floor(dep / 15));
+          for (let i = 0; i < nz; i++) {
+            const wz = cz - dep / 2 + (i + 0.5) * (dep / nz);
+            put(cx - w / 2, wy, wz, false);
+            put(cx + w / 2, wy, wz, false);
+          }
+        }
+      };
+
+      const building = (grp, it, cx, cz, w, dep, hgt) => {
+        const style = getStyle(it);
+        const wall = it.existing ? mat("#c6bfb1") : mat(style.wall);
+        M(grp, new THREE.BoxGeometry(w + 1.2, 1.6, dep + 1.2), mat("#7d7468"), cx, 0.8, cz); /* foundation */
+        M(grp, new THREE.BoxGeometry(w, hgt, dep), wall, cx, hgt / 2 + 1, cz);
+        const stories = Math.max(1, Math.round(hgt / 11));
+        if (it.itemId === "green") {
+          M(grp, new THREE.BoxGeometry(w, hgt, dep), mat("#bcd9e2", { transparent: true, opacity: 0.45, roughness: 0.1 }), cx, hgt / 2 + 1, cz, true);
+        } else if (it.itemId === "warehouse" || it.itemId === "retail") {
+          for (let i = 0; i < Math.floor(w / 10); i++)
+            M(grp, new THREE.BoxGeometry(0.5, hgt - 2, dep + 0.4), mat(style.wall === "#aeb4bb" ? "#9aa1a8" : style.wall), cx - w / 2 + (i + 0.5) * (w / Math.floor(w / 10)), hgt / 2 + 1, cz, true);
+          if (it.itemId === "retail") M(grp, new THREE.BoxGeometry(w * 0.8, hgt * 0.5, 0.8), mat("#2e4757", { roughness: 0.1, metalness: 0.4 }), cx, hgt * 0.3 + 1, cz + dep / 2, true);
+          else windowsOn(grp, cx, cz, w, dep, hgt * 0.9, 1);
+        } else {
+          windowsOn(grp, cx, cz, w, dep, hgt, stories);
+        }
+        /* door + porch on homes */
+        if (it.itemId === "house" || it.itemId === "guest" || !BUILDABLE[it.itemId]) {
+          const doorZ = cz + dep / 2;
+          M(grp, new THREE.BoxGeometry(5, 8.4, 0.8), mat("#f7f7f2"), cx, 5.2, doorZ, true);
+          M(grp, new THREE.BoxGeometry(3.8, 7.4, 1), mat("#5d4630", { roughness: 0.6 }), cx, 4.7, doorZ, true);
+          M(grp, new THREE.BoxGeometry(9, 0.9, 6), mat("#b8b0a2"), cx, 1.4, doorZ + 3);
+          M(grp, new THREE.BoxGeometry(10, 0.8, 7), mat(style.roofC), cx, 10.5, doorZ + 3.5);
+          [-3.8, 3.8].forEach((dx) => M(grp, new THREE.CylinderGeometry(0.45, 0.45, 8.6, 8), mat("#f7f7f2"), cx + dx, 5.8, doorZ + 6));
+        }
+        if (it.itemId === "house") {
+          M(grp, new THREE.BoxGeometry(4, hgt + dep * 0.32 + 5, 4), mat("#8a7466"), cx + w / 2 - 6, (hgt + dep * 0.32 + 5) / 2 + 1, cz - dep / 4);
+        }
+        if (it.itemId === "garage") return;
+        roofOn(grp, cx, cz, w, dep, hgt + 1, it.existing ? { ...style, roofC: "#8f887a" } : style);
+      };
+
+      const items3d = [];
       let mainHouse = null;
       items.forEach((it) => {
         if (!it.fp) return;
+        const grp = new THREE.Group();
+        grp.userData.uid = it.uid;
+        ground.add(grp);
+        items3d.push(grp);
         const w = it.rot ? it.fp[1] : it.fp[0];
         const dep = it.rot ? it.fp[0] : it.fp[1];
         const cx = it.x + w / 2 - winW / 2;
         const cz = it.y + dep / 2 - winD / 2;
         const id = it.itemId || "";
         if (id === "house") mainHouse = [cx, cz, w, dep];
-        if (TREE_IDS[id]) { tree(cx, cz, Math.min(w, dep), Math.min(w, dep) * 1.15 + 8, TREE_IDS[id]); return; }
+        if (CLEAR_IDS[id]) { M(grp, new THREE.BoxGeometry(w, 0.8, dep), mat("#a8906a", { roughness: 1 }), cx, 0.5, cz); return; }
+        if (TREE_IDS[id]) { tree(grp, cx, cz, Math.min(w, dep), Math.min(w, dep) * 1.15 + 8, TREE_IDS[id]); return; }
         if (id === "cypress" || id === "arbor") {
           const n = Math.max(3, Math.round(Math.max(w, dep) / 9));
           for (let i = 0; i < n; i++) {
             const f = (i + 0.5) / n;
-            conifer(cx - w / 2 + (w > dep ? f * w : w / 2) - (w > dep ? 0 : 0),
-              cz - dep / 2 + (w > dep ? dep / 2 : f * dep) - (w > dep ? -dep / 2 + dep / 2 : 0), 13 + Math.random() * 3);
+            conifer(grp, w > dep ? cx - w / 2 + f * w : cx, w > dep ? cz : cz - dep / 2 + f * dep, 13 + Math.random() * 3);
           }
           return;
         }
-        if (HEDGE_IDS[id]) { addMesh(new THREE.BoxGeometry(w, 6.5, dep), mat(jitter("#3a7549")), cx, 3.25, cz); return; }
+        if (HEDGE_IDS[id]) { M(grp, new THREE.BoxGeometry(w, 6.5, dep), mat(jitter("#3a7549")), cx, 3.25, cz); return; }
         if (id === "roses" || id === "perennial") {
-          addMesh(new THREE.BoxGeometry(w, 1.2, dep), mat("#5f8f4e"), cx, 0.7, cz);
+          M(grp, new THREE.BoxGeometry(w, 1.2, dep), mat("#5f8f4e"), cx, 0.7, cz);
           for (let i = 0; i < 8; i++)
-            addMesh(new THREE.SphereGeometry(0.9, 6, 5), mat(jitter(i % 2 ? "#c46a8e" : "#d8a15c", 0.12)),
-              cx - w / 2 + Math.random() * w, 1.8, cz - dep / 2 + Math.random() * dep, true);
+            M(grp, new THREE.SphereGeometry(0.9, 6, 5), mat(jitter(i % 2 ? "#c46a8e" : "#d8a15c", 0.12)), cx - w / 2 + Math.random() * w, 1.8, cz - dep / 2 + Math.random() * dep, true);
           return;
         }
         if (id === "orchard") {
-          addMesh(new THREE.BoxGeometry(w, 0.4, dep), mat("#5f9e52"), cx, 0.3, cz);
+          M(grp, new THREE.BoxGeometry(w, 0.4, dep), mat("#5f9e52"), cx, 0.3, cz);
           for (let gx = 0; gx < 4; gx++) for (let gz = 0; gz < 4; gz++)
-            tree(cx - w / 2 + (gx + 0.5) * (w / 4), cz - dep / 2 + (gz + 0.5) * (dep / 4), 12, 14, 1);
+            tree(grp, cx - w / 2 + (gx + 0.5) * (w / 4), cz - dep / 2 + (gz + 0.5) * (dep / 4), 12, 14, 1);
           return;
         }
-        if (CLEAR_IDS[id]) { addMesh(new THREE.BoxGeometry(w, 0.8, dep), mat("#a8906a", { roughness: 1 }), cx, 0.5, cz); return; }
         if (WATER_IDS[id]) {
-          addMesh(new THREE.BoxGeometry(w + 5, 1, dep + 5), mat("#ddd5c6"), cx, 0.5, cz);
-          addMesh(new THREE.BoxGeometry(w, 1.4, dep), mat("#2f9fd4", { transparent: true, opacity: 0.85, roughness: 0.1, metalness: 0.3 }), cx, 1.25, cz);
+          M(grp, new THREE.BoxGeometry(w + 6, 1.1, dep + 6), mat("#ddd5c6"), cx, 0.55, cz);
+          M(grp, new THREE.BoxGeometry(w + 1.4, 1.5, dep + 1.4), mat("#f0ece2"), cx, 0.9, cz); /* coping */
+          M(grp, new THREE.BoxGeometry(w, 1.2, dep), mat("#33b1e0", { transparent: true, opacity: 0.82, roughness: 0.08, metalness: 0.25 }), cx, 1.35, cz);
+          M(grp, new THREE.BoxGeometry(3, 0.4, 6), mat("#e8eef5"), cx + w / 2 - 2, 1.7, cz, true); /* ledge */
           return;
         }
-        if (SLAB_IDS[id]) { addMesh(new THREE.BoxGeometry(w, 1, dep), mat(SLAB_IDS[id]), cx, 0.6, cz); return; }
+        if (id === "tennis" || id === "pickle") {
+          M(grp, new THREE.BoxGeometry(w, 1, dep), mat(id === "tennis" ? "#2e6b4f" : "#3f7f8e"), cx, 0.6, cz);
+          const line = mat("#f5f5f0");
+          M(grp, new THREE.BoxGeometry(w * 0.82, 0.15, 0.7), line, cx, 1.15, cz - dep * 0.38, true);
+          M(grp, new THREE.BoxGeometry(w * 0.82, 0.15, 0.7), line, cx, 1.15, cz + dep * 0.38, true);
+          M(grp, new THREE.BoxGeometry(w * 0.82, 0.15, 0.7), line, cx, 1.15, cz, true);
+          M(grp, new THREE.BoxGeometry(0.7, 0.15, dep * 0.76), line, cx - w * 0.4, 1.15, cz, true);
+          M(grp, new THREE.BoxGeometry(0.7, 0.15, dep * 0.76), line, cx + w * 0.4, 1.15, cz, true);
+          M(grp, new THREE.BoxGeometry(w * 0.8, 3.4, 0.25), mat("#1e2b33", { transparent: true, opacity: 0.7 }), cx, 2.8, cz, true);
+          for (let i = 0; i <= 6; i++) {
+            M(grp, new THREE.CylinderGeometry(0.25, 0.25, 10, 6), mat("#3a4149"), cx - w / 2 + (i / 6) * w, 5.6, cz - dep / 2, true);
+            M(grp, new THREE.CylinderGeometry(0.25, 0.25, 10, 6), mat("#3a4149"), cx - w / 2 + (i / 6) * w, 5.6, cz + dep / 2, true);
+          }
+          return;
+        }
+        if (id === "patio") {
+          M(grp, new THREE.BoxGeometry(w, 1, dep), mat("#b9a184"), cx, 0.6, cz);
+          const beam = mat("#6e5a44");
+          [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => M(grp, new THREE.BoxGeometry(0.9, 9.5, 0.9), beam, cx + sx * (w / 2 - 1.5), 5.5, cz + sz * (dep / 2 - 1.5)));
+          for (let i = 0; i < 6; i++) M(grp, new THREE.BoxGeometry(w, 0.5, 0.9), beam, cx, 10.3, cz - dep / 2 + 1.5 + (i * (dep - 3)) / 5, true);
+          M(grp, new THREE.BoxGeometry(8, 3.4, 3.5), mat("#8a8f96"), cx - w / 4, 2.7, cz - dep / 4); /* grill island */
+          return;
+        }
+        if (id === "firepit") {
+          M(grp, new THREE.CylinderGeometry(w / 2, w / 2, 1, 16), mat("#b9a184"), cx, 0.5, cz);
+          M(grp, new THREE.CylinderGeometry(2.4, 2.8, 1.6, 12), mat("#6f6a61"), cx, 1.6, cz);
+          M(grp, new THREE.ConeGeometry(1.3, 3.2, 7), mat("#ff8c3a", { emissive: 0xff7a29, emissiveIntensity: 0.9 }), cx, 3.4, cz, true);
+          M(grp, new THREE.CylinderGeometry(w / 2 - 1, w / 2 - 1, 1.6, 16, 1, true), mat("#8f8578"), cx, 1.3, cz, true);
+          return;
+        }
+        if (id === "playset") {
+          M(grp, new THREE.BoxGeometry(8, 8, 8), mat("#a3703f"), cx - w / 4, 6.5, cz);
+          M(grp, new THREE.ConeGeometry(6.4, 4.5, 4), mat("#2f6e42"), cx - w / 4, 12.7, cz);
+          const slide = M(grp, new THREE.BoxGeometry(3, 0.6, 12), mat("#d8a15c"), cx - w / 4 + 5, 4.2, cz + 6);
+          slide.rotation.x = 0.5;
+          M(grp, new THREE.BoxGeometry(0.7, 9, 0.7), mat("#a3703f"), cx + w / 4, 4.5, cz - 3);
+          M(grp, new THREE.BoxGeometry(0.7, 9, 0.7), mat("#a3703f"), cx + w / 4, 4.5, cz + 3);
+          M(grp, new THREE.BoxGeometry(0.5, 0.5, 7), mat("#6e5a44"), cx + w / 4, 9, cz, true);
+          return;
+        }
+        if (id === "heli") {
+          M(grp, new THREE.CylinderGeometry(w / 2, w / 2, 1, 24), mat("#6a6f76"), cx, 0.6, cz);
+          M(grp, new THREE.CylinderGeometry(w / 2 - 1.5, w / 2 - 1.5, 0.2, 24, 1, true), mat("#f5f5f0"), cx, 1.15, cz, true);
+          M(grp, new THREE.BoxGeometry(2, 0.2, 12), mat("#f5f5f0"), cx - 4, 1.15, cz, true);
+          M(grp, new THREE.BoxGeometry(2, 0.2, 12), mat("#f5f5f0"), cx + 4, 1.15, cz, true);
+          M(grp, new THREE.BoxGeometry(10, 0.2, 2), mat("#f5f5f0"), cx, 1.15, cz, true);
+          return;
+        }
+        if (SLAB_IDS[id]) { M(grp, new THREE.BoxGeometry(w, 1, dep), mat(SLAB_IDS[id]), cx, 0.6, cz); return; }
         const hgt = BLDG_H[id] || (it.landscape ? 8 : 14);
-        if (id === "garage") { addMesh(new THREE.BoxGeometry(w, 4, dep), mat("#8f97a1"), cx, 2, cz); return; }
-        building(cx, cz, w, dep, hgt, it.existing);
+        if (id === "garage") {
+          M(grp, new THREE.BoxGeometry(w, 4.5, dep), mat("#8f97a1"), cx, 2.25, cz);
+          for (let i = 0; i < Math.max(1, Math.floor(w / 14)); i++)
+            M(grp, new THREE.BoxGeometry(10, 3.4, 0.5), mat("#d9dde2"), cx - w / 2 + 7 + i * 14, 2.2, cz + dep / 2, true);
+          return;
+        }
+        building(grp, it, cx, cz, w, dep, hgt);
       });
 
-      /* scale references: a person by the house, a car nearby */
+      const extras = new THREE.Group();
+      ground.add(extras);
       if (mainHouse) {
-        person(mainHouse[0] + mainHouse[2] / 2 + 6, mainHouse[1] + mainHouse[3] / 2 + 6);
-        car(mainHouse[0] - mainHouse[2] / 2 - 14, mainHouse[1] + mainHouse[3] / 2 + 8);
-      } else if (items.some((i) => i.fp)) {
-        person(6, winD * 0.3);
-      }
+        person(extras, mainHouse[0] + mainHouse[2] / 2 + 6, mainHouse[1] + mainHouse[3] / 2 + 6);
+        car(extras, mainHouse[0] - mainHouse[2] / 2 - 14, mainHouse[1] + mainHouse[3] / 2 + 8);
+      } else if (items.some((i) => i.fp)) person(extras, 6, winD * 0.3);
 
-      /* cameras with inertia */
+      /* cameras + controls (orbit inertia, walk joystick) */
       const cam = new THREE.PerspectiveCamera(58, W / H, 0.5, winW * 8);
       const orbit = { az: 0.85, el: 0.5, dist: Math.max(winW, winD) * 1.15, vaz: 0, vel: 0 };
-      const walk = { yaw: Math.PI, pitch: -0.03, pos: new THREE.Vector3(0, 5.8, winD * 0.48), vyaw: 0, vpitch: 0 };
+      const walk = { yaw: Math.PI, pitch: -0.03, pos: new THREE.Vector3(0, 5.8, winD * 0.48) };
       let mode = camModeRef.current;
-      let dragging = false;
+      let dragging = false, downAt = null;
       const applyCam = () => {
         if (mode === "walk") {
           cam.position.copy(walk.pos);
-          cam.lookAt(
-            walk.pos.x + Math.sin(walk.yaw) * Math.cos(walk.pitch),
-            walk.pos.y + Math.sin(walk.pitch),
-            walk.pos.z + Math.cos(walk.yaw) * Math.cos(walk.pitch));
+          cam.lookAt(walk.pos.x + Math.sin(walk.yaw) * Math.cos(walk.pitch), walk.pos.y + Math.sin(walk.pitch), walk.pos.z + Math.cos(walk.yaw) * Math.cos(walk.pitch));
         } else {
-          cam.position.set(
-            orbit.dist * Math.cos(orbit.el) * Math.sin(orbit.az),
-            orbit.dist * Math.sin(orbit.el),
-            orbit.dist * Math.cos(orbit.el) * Math.cos(orbit.az));
+          cam.position.set(orbit.dist * Math.cos(orbit.el) * Math.sin(orbit.az), orbit.dist * Math.sin(orbit.el), orbit.dist * Math.cos(orbit.el) * Math.cos(orbit.az));
           cam.lookAt(0, 4, 0);
         }
       };
       applyCam();
 
+      const ray = new THREE.Raycaster();
       const el = renderer.domElement;
       el.style.touchAction = "none";
       const ptrs = new Map();
       let lastPinch = 0;
-      const onDown = (e) => { dragging = true; ptrs.set(e.pointerId, [e.clientX, e.clientY]); el.setPointerCapture?.(e.pointerId); };
+      const onDown = (e) => { dragging = true; downAt = [e.clientX, e.clientY]; ptrs.set(e.pointerId, [e.clientX, e.clientY]); el.setPointerCapture?.(e.pointerId); };
       const onMove = (e) => {
         if (!ptrs.has(e.pointerId)) return;
         const prev = ptrs.get(e.pointerId);
@@ -805,9 +956,8 @@ function ThreeDView({ location, items, viewFt, onSnapshot }) {
         const dx = e.clientX - prev[0], dy = e.clientY - prev[1];
         if (ptrs.size === 1) {
           if (mode === "walk") {
-            walk.vyaw = -dx * 0.005; walk.vpitch = -dy * 0.0035;
-            walk.yaw += walk.vyaw;
-            walk.pitch = Math.min(0.55, Math.max(-0.6, walk.pitch + walk.vpitch));
+            walk.yaw -= dx * 0.006;
+            walk.pitch = Math.min(0.55, Math.max(-0.6, walk.pitch - dy * 0.004));
           } else {
             orbit.vaz = -dx * 0.005; orbit.vel = dy * 0.004;
             orbit.az += orbit.vaz;
@@ -821,7 +971,21 @@ function ThreeDView({ location, items, viewFt, onSnapshot }) {
           lastPinch = pinch;
         }
       };
-      const onUp = (e) => { ptrs.delete(e.pointerId); if (!ptrs.size) dragging = false; if (ptrs.size < 2) lastPinch = 0; };
+      const onUp = (e) => {
+        ptrs.delete(e.pointerId);
+        if (!ptrs.size) dragging = false;
+        if (ptrs.size < 2) lastPinch = 0;
+        /* tap (not drag) = select item to restyle */
+        if (downAt && Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) < 7) {
+          const rect = el.getBoundingClientRect();
+          ray.setFromCamera(new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1), cam);
+          const hits = ray.intersectObjects(items3d, true);
+          let uid = null, o = hits[0]?.object;
+          while (o) { if (o.userData?.uid) { uid = o.userData.uid; break; } o = o.parent; }
+          onSelectItem?.(uid);
+        }
+        downAt = null;
+      };
       const onWheel = (e) => { e.preventDefault(); if (mode === "walk") return; orbit.dist = Math.min(winW * 4, Math.max(40, orbit.dist * (1 + Math.sign(e.deltaY) * 0.1))); applyCam(); };
       const mv = { f: 0, b: 0, l: 0, r: 0 };
       const stick = { x: 0, y: 0 };
@@ -848,19 +1012,13 @@ function ThreeDView({ location, items, viewFt, onSnapshot }) {
       api.current = {
         mv, stick,
         setMode: (m) => { mode = m; applyCam(); },
-        reset: () => {
-          orbit.az = 0.85; orbit.el = 0.5; orbit.dist = Math.max(winW, winD) * 1.15; orbit.vaz = 0; orbit.vel = 0;
-          walk.yaw = Math.PI; walk.pitch = -0.03; walk.pos.set(0, 5.8, winD * 0.48);
-          applyCam();
-        },
+        reset: () => { orbit.az = 0.85; orbit.el = 0.5; orbit.dist = Math.max(winW, winD) * 1.15; orbit.vaz = 0; orbit.vel = 0; walk.yaw = Math.PI; walk.pitch = -0.03; walk.pos.set(0, 5.8, winD * 0.48); applyCam(); },
         snap: () => {
           try {
             const url0 = renderer.domElement.toDataURL("image/png");
             onSnapshot?.(url0);
             const a = document.createElement("a");
-            a.href = url0;
-            a.download = "tapacasa-3d.png";
-            a.click();
+            a.href = url0; a.download = "tapacasa-3d.png"; a.click();
           } catch { /* blocked */ }
         },
       };
@@ -870,23 +1028,18 @@ function ThreeDView({ location, items, viewFt, onSnapshot }) {
       const loop = () => {
         if (dead) return;
         raf = requestAnimationFrame(loop);
-        /* inertia when not dragging */
-        if (!dragging) {
-          if (mode === "orbit" && (Math.abs(orbit.vaz) > 0.0004 || Math.abs(orbit.vel) > 0.0004)) {
-            orbit.az += orbit.vaz; orbit.el = Math.min(1.45, Math.max(0.1, orbit.el + orbit.vel));
-            orbit.vaz *= 0.92; orbit.vel *= 0.92;
-            applyCam();
-          }
+        if (!dragging && mode === "orbit" && (Math.abs(orbit.vaz) > 0.0004 || Math.abs(orbit.vel) > 0.0004)) {
+          orbit.az += orbit.vaz; orbit.el = Math.min(1.45, Math.max(0.1, orbit.el + orbit.vel));
+          orbit.vaz *= 0.92; orbit.vel *= 0.92;
+          applyCam();
         }
         if (mode === "walk") {
           const fwd = (mv.f - mv.b) + (-stick.y);
           const strafe = (mv.r - mv.l) + (stick.x);
           if (fwd || strafe) {
             const fx = Math.sin(walk.yaw), fz = Math.cos(walk.yaw);
-            walk.pos.x += fwd * fx * SPEED + strafe * fz * SPEED;
-            walk.pos.z += fwd * fz * SPEED - strafe * fx * SPEED;
-            walk.pos.x = Math.max(-lim.x, Math.min(lim.x, walk.pos.x));
-            walk.pos.z = Math.max(-lim.z, Math.min(lim.z, walk.pos.z));
+            walk.pos.x = Math.max(-lim.x, Math.min(lim.x, walk.pos.x + fwd * fx * SPEED + strafe * fz * SPEED));
+            walk.pos.z = Math.max(-lim.z, Math.min(lim.z, walk.pos.z + fwd * fz * SPEED - strafe * fx * SPEED));
             applyCam();
           }
         }
@@ -898,6 +1051,9 @@ function ThreeDView({ location, items, viewFt, onSnapshot }) {
     return () => { dead = true; cancelAnimationFrame(raf); cleanupEvents(); if (renderer) renderer.dispose(); };
   }, [itemsKey, location, viewFt]);
 
+  const styleOf = selItem ? getStyle(selItem) : null;
+  const canStyle = selItem && (BUILDABLE[selItem.itemId] || (!SLAB_IDS[selItem.itemId] && !TREE_IDS[selItem.itemId] && !HEDGE_IDS[selItem.itemId] && !WATER_IDS[selItem.itemId] && !CLEAR_IDS[selItem.itemId] && !selItem.landscape));
+
   return (
     <div>
       <div className="cam-bar">
@@ -906,6 +1062,22 @@ function ThreeDView({ location, items, viewFt, onSnapshot }) {
         <button className="btn-ghost xs" onClick={() => api.current.reset?.()}>Reset view</button>
         <button className="btn-ghost xs" onClick={() => api.current.snap?.()}>📸 Snapshot</button>
       </div>
+      {canStyle && (
+        <div className="style-bar">
+          <span className="style-name">🎨 {selItem.name}</span>
+          <span className="style-lab">Walls</span>
+          {WALL_SWATCHES.map((c) => (
+            <button key={c} className={`swatch ${styleOf.wall === c ? "on" : ""}`} style={{ background: c }} onClick={() => onStyle?.(selItem.uid, { ...styleOf, wall: c })} aria-label={`Wall color ${c}`} />
+          ))}
+          <span className="style-lab">Roof</span>
+          {ROOF_SWATCHES.map((c) => (
+            <button key={c} className={`swatch ${styleOf.roofC === c ? "on" : ""}`} style={{ background: c }} onClick={() => onStyle?.(selItem.uid, { ...styleOf, roofC: c })} aria-label={`Roof color ${c}`} />
+          ))}
+          {["gable", "hip", "flat", "modern"].map((rt) => (
+            <button key={rt} className={styleOf.roofT === rt ? "ctab on" : "ctab"} onClick={() => onStyle?.(selItem.uid, { ...styleOf, roofT: rt })}>{rt}</button>
+          ))}
+        </div>
+      )}
       <div className="threed-holder">
         <div ref={mountRef} className="threed-mount" />
         {status3d === "loading" && <div className="map-msg">Building your land in 3D…</div>}
@@ -917,11 +1089,8 @@ function ThreeDView({ location, items, viewFt, onSnapshot }) {
         )}
       </div>
       <div className="orbit-hint">
-        {camMode === "walk"
-          ? "DRAG SCENE TO LOOK · JOYSTICK (OR WASD) TO WALK · EYE HEIGHT 5′10″"
-          : "DRAG TO ORBIT · PINCH OR SCROLL TO ZOOM · 📸 SAVES A PICTURE"}
+        {camMode === "walk" ? "DRAG SCENE TO LOOK · JOYSTICK (OR WASD) TO WALK" : "TAP A BUILDING TO RESTYLE IT · DRAG TO ORBIT · PINCH/SCROLL TO ZOOM"}
         {" · REAL SLOPE "}{location.terrain ? `(${location.terrain.slopePct}% ${location.terrain.downhill})` : "(FLAT)"}
-        {" · SATELLITE GROUND "}{location.coords ? "ON" : "N/A FOR CURATED LOTS"}
       </div>
     </div>
   );
@@ -2027,7 +2196,7 @@ Features:\n${spec || "Vacant land only."}`);
         <WelcomeGuide open={showGuide} onClose={closeGuide} />
         <header className="hdr">
           <div className="hdr-mark">⌂</div>
-          <div style={{ flex: 1 }}><h1>TapaCasa</h1><p className="hdr-sub">SHEET 1 — SITE SELECTION · ANYWHERE ON EARTH · v14-FLOW</p></div>
+          <div style={{ flex: 1 }}><h1>TapaCasa</h1><p className="hdr-sub">SHEET 1 — SITE SELECTION · ANYWHERE ON EARTH · v15-ARCH</p></div>
           <button className="btn-ghost xs" onClick={() => setShowGuide(true)}>? How it works</button>
         </header>
         <div className="loc-wrap">
@@ -2204,7 +2373,7 @@ Features:\n${spec || "Vacant land only."}`);
           {planView === "photo" ? (
             <PhotorealView location={location} items={placed.filter((p) => p.fp)} />
           ) : planView === "three" ? (
-            <ThreeDView location={location} items={placed.filter((p) => p.fp)} viewFt={viewFt} onSnapshot={setSnapUrl} />
+            <ThreeDView location={location} items={placed.filter((p) => p.fp)} viewFt={viewFt} onSnapshot={setSnapUrl} selectedUid={selected} onSelectItem={setSelected} onStyle={(uid, style) => patch(uid, { style })} />
           ) : planView === "floor" ? (
             <div>
               <div className="addroom-row">
@@ -2457,6 +2626,11 @@ function Style() {
       .int-toggle { background:none; border:none; color:#9DBEDD; cursor:pointer; font-family:'IBM Plex Mono',monospace; font-size:11px; padding:0; text-align:left; }
       .threed-holder { position:relative; border:1.5px solid #2A4A72; min-height:320px; background:#0A1F38; }
       .threed-holder canvas { display:block; width:100%; height:auto; }
+      .style-bar { display:flex; align-items:center; gap:6px; flex-wrap:wrap; border:1.5px solid #FF7A29; background:rgba(255,122,41,0.06); padding:7px 9px; margin-bottom:8px; }
+      .style-name { font-size:12.5px; font-weight:700; margin-right:4px; }
+      .style-lab { font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:1px; color:#7FA8CC; }
+      .swatch { width:24px; height:24px; border:2px solid #2A4A72; cursor:pointer; padding:0; }
+      .swatch.on { border-color:#FF9A52; }
       .cam-bar { display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
       .walk-pad { position:absolute; bottom:12px; left:50%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; gap:5px; z-index:2; }
       .wp-row { display:flex; gap:5px; }
