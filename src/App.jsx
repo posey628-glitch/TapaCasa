@@ -1176,6 +1176,11 @@ function SitePlan({ location, items, selected, onSelect, onMove, viewFt, satOn, 
       ) : (
         <rect x="1.5" y="1.5" width={VB_W - 3} height={VB_H - 3} fill="none" stroke={print ? "#123A5E" : "#BFDCF5"} strokeWidth="2" strokeDasharray="14 6" pointerEvents="none" />
       )}
+      <g pointerEvents="none" transform={`translate(${VB_W - 26}, 26)`}>
+        <circle r="14" fill="rgba(10,31,56,0.6)" stroke="#7FA8CC" strokeWidth="1" />
+        <path d="M0,-9 L4,5 L0,2 L-4,5 Z" fill="#FF9A52" />
+        <text y="-16" textAnchor="middle" className="plan-sub">N</text>
+      </g>
       <text x={VB_W / 2} y={VB_H + 20} textAnchor="middle" className="plan-dim" pointerEvents="none">
         {poly ? "TRACED BOUNDARY · " : ""}
         {winW < lotW ? `SHOWING ${Math.round(winW)} × ${Math.round(winD)} FT ENVELOPE OF ` : ""}
@@ -1725,9 +1730,9 @@ Be realistic: urban/suburban land is far pricier per acre than rural; use the ac
         <button className="btn-orange sm" onClick={runSearch}>Search</button>
         <button className="btn-ghost xs" onClick={aiLocate}>⚡ AI locate</button>
         <button className="btn-ghost xs" onClick={toggleSat} disabled={status !== "ready"}>{sat ? "Street view" : "Satellite"}</button>
-        <button className="btn-ghost xs" onClick={randomSpot} disabled={rolling}>{rolling ? "Rolling…" : "🎲 Anywhere on Earth"}</button>
+        <button className="btn-ghost xs" onClick={randomSpot} disabled={rolling} title="Drop somewhere random on the planet and build there">{rolling ? "Rolling…" : "🎲 Anywhere on Earth"}</button>
         {!tracing
-          ? <button className="btn-ghost xs" onClick={startTrace} disabled={status !== "ready"}>✏ Trace parcel</button>
+          ? <button className="btn-ghost xs" onClick={startTrace} disabled={status !== "ready"} title="Tap the corners of the real lot on satellite — acreage is computed for you">✏ Trace parcel</button>
           : <>
               <button className="btn-orange sm" onClick={finishTrace} disabled={tracePts.length < 3}>✓ Finish ({tracePts.length} pts)</button>
               <button className="btn-ghost xs" onClick={clearTrace}>Cancel</button>
@@ -1907,15 +1912,64 @@ function SandboxBanner() {
   );
 }
 
+function LegendRows() {
+  const Row = ({ chip, label }) => (
+    <div className="lg-row">{chip}<span>{label}</span></div>
+  );
+  return (
+    <div>
+      <Row chip={<span className="lg-chip" style={{ border: "2px dashed #BFDCF5" }} />} label="Parcel boundary (dashed) — traced or estimated lot line" />
+      <Row chip={<span className="lg-chip" style={{ background: "repeating-linear-gradient(45deg,#2A4A72 0 3px,#102C4E 3px 6px)", border: "1.5px solid #EAF4FF" }} />} label="Structure — buildings & built amenities (drag to place, tap in 3D to restyle)" />
+      <Row chip={<span className="lg-chip" style={{ background: "radial-gradient(circle,#8CDCAA 1.5px,transparent 2px) 0 0/7px 7px #102C4E", border: "1.5px solid #8CDCAA", borderRadius: 8 }} />} label="Landscaping — trees, gardens, lawns (rounded green)" />
+      <Row chip={<span className="lg-chip" style={{ background: "#b09a72" }} />} label="Cleared/graded ground — demolition pads & land clearing" />
+      <Row chip={<span className="lg-chip" style={{ border: "2px dashed #c9c2b4" }} />} label="Existing as-built home — demolish it to redesign from bare land" />
+      <Row chip={<span className="lg-chip" style={{ background: "#FF7A29" }} />} label="Selected item — rotate, remove, or restyle" />
+    </div>
+  );
+}
+
 function WelcomeGuide({ open, onClose }) {
+  const [tab, setTab] = useState("start");
   if (!open) return null;
+  const GLOSSARY = [
+    ["Appraisal", "An estimate of what land or property is worth on the market. TapaCasa's AI appraises from real regional price levels."],
+    ["Effective tax rate", "The % of a property's value paid in property tax each year. Varies hugely by region — TapaCasa uses the local rate."],
+    ["Footprint", "The ground area a structure covers, width × depth in feet. Everything here is true to real-world size."],
+    ["Building envelope", "The zoomed-in area of your lot where you're actively placing things."],
+    ["Clearing & grading", "Removing trees/structures and leveling the ground so it's buildable."],
+    ["Soft costs", "Real-project costs beyond construction: architect & engineering fees, permits, and contingency."],
+    ["Contingency", "Budget reserve (typically ~10%) for the unexpected — every real build needs it."],
+    ["Plat / parcel", "The official recorded map and boundary of a piece of land, held by the county."],
+    ["Turnkey", "Finished and ready to move in — nothing left for the buyer to build."],
+    ["$/sq ft", "Construction cost per square foot — the standard way builders compare projects."],
+  ];
   return (
     <div className="guide-scrim" onClick={onClose}>
       <div className="guide" onClick={(e) => e.stopPropagation()}>
-        <h3>⌂ Welcome to TapaCasa</h3>
-        <p><b>1 · Claim your ground.</b> Search any address, tap the satellite map, 🎲 roll a random spot on Earth, or grab a curated listing. Trace the real boundary if you want exact.</p>
-        <p><b>2 · Dream it in.</b> Add anything from the catalog — or just tell the ✦ Design Director in plain words: "infinity pool behind the house, cypress along the drive, marble in the foyer." It prices and places everything, true to size.</p>
-        <p><b>3 · Live in it.</b> Flip to 3D land and 🚶 walk your property, carve real buildings away in 🌍 Photoreal, arrange rooms floor by floor, watch cost & taxes update — then 🔗 share the link or print the blueprint.</p>
+        <div className="cat-tabs">
+          {[["start", "Quick start"], ["legend", "Map legend"], ["gloss", "Glossary"], ["tips", "Pro tips"]].map(([k, l]) => (
+            <button key={k} className={tab === k ? "ctab on" : "ctab"} onClick={() => setTab(k)}>{l}</button>
+          ))}
+        </div>
+        {tab === "start" && (<div>
+          <h3>⌂ Welcome to TapaCasa</h3>
+          <p><b>1 · Claim your ground.</b> Search any address, tap the satellite map, 🎲 roll a random spot on Earth, or grab a curated listing. ✏ Trace the real boundary for an exact lot.</p>
+          <p><b>2 · Dream it in.</b> Add anything from the catalog — or tell the ✦ Design Director in plain words: "infinity pool behind the house, cypress along the drive." Or hit ✨ Surprise me and let it design the whole property.</p>
+          <p><b>3 · Live in it.</b> 🚶 Walk your land in 3D, tap buildings to restyle them, carve real structures away in 🌍 Photoreal, arrange rooms floor by floor — then 🔗 share the link or print the blueprint.</p>
+        </div>)}
+        {tab === "legend" && (<div><h3>Reading the site plan</h3><LegendRows /></div>)}
+        {tab === "gloss" && (<div className="gloss">
+          <h3>Plain-English glossary</h3>
+          {GLOSSARY.map(([t, d]) => <p key={t}><b>{t}</b> — {d}</p>)}
+        </div>)}
+        {tab === "tips" && (<div>
+          <h3>Pro tips</h3>
+          <p><b>🎨 Tap any building in 3D</b> to change wall color, roof color, and roof shape.</p>
+          <p><b>🏗 Demolish & clear:</b> demolishing an existing home (or dragging "Land Clearing" over anything) carves it out of the real world in 🌍 Photoreal.</p>
+          <p><b>🔗 Share links</b> carry your entire design — send one to a client or partner.</p>
+          <p><b>Budget field</b> shows live over/under. <b>⬇ CSV</b> exports a contractor-ready schedule. <b>⎙ Print</b> makes a blueprint pack (with your last 📸 snapshot).</p>
+          <p><b>Rooms:</b> adding a house auto-fills a realistic floor plan — add rooms per level and give every item a home.</p>
+        </div>)}
         <button className="btn-orange" onClick={onClose}>Let's build →</button>
       </div>
     </div>
@@ -1944,6 +1998,7 @@ function TapaCasaApp() {
   const [planView, setPlanView] = useState("site");
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [budget, setBudget] = useState("");
+  const [softCosts, setSoftCosts] = useState(true);
   const [compareSel, setCompareSel] = useState([]);
   const [compare, setCompare] = useState(null);
   const [satOn, setSatOn] = useState(true);
@@ -2063,15 +2118,19 @@ function TapaCasaApp() {
   const totals = useMemo(() => {
     const build = placed.reduce((s, i) => s + i.price, 0);
     const land = location ? location.price : 0;
-    const total = land + build;
+    const soft = softCosts ? Math.round(build * 0.195) : 0;
+    const total = land + build + soft;
+    const months = build > 0 ? Math.min(36, Math.round(6 + (build / 1000000) * 2.2)) : 0;
     const tax = location ? total * location.taxRate : 0;
     const monthly = (total * 0.8 * (0.065 / 12)) / (1 - Math.pow(1 + 0.065 / 12, -360));
-    return { build, land, total, tax, monthly };
-  }, [placed, location]);
+    return { build, land, soft, months, total, tax, monthly };
+  }, [placed, location, softCosts]);
 
   /* ── AI DESIGN DIRECTOR: natural language → implemented items ── */
-  const runDirector = async () => {
-    if (!director.trim() || !location) return;
+  const AUTO_PROMPT = "Design this entire property tastefully for its location: a fitting main residence sized for the lot, a driveway, a pool or water feature if the climate suits, a patio/outdoor living area, and regional landscaping (trees, hedges, gardens). Fill the lot sensibly with 5-6 items.";
+  const runDirector = async (override) => {
+    const req = (typeof override === "string" ? override : director).trim();
+    if (!req || !location) return;
     setAi({ busy: true, err: null, note: null });
     const win = Math.min(viewFt, lotW);
     const existing = placed.map((p) => `${p.name}${p.fp ? ` at (${Math.round(p.x)},${Math.round(p.y)}) ft, ${p.fp[0]}×${p.fp[1]}` : p.room ? ` in ${p.room}` : ""}`).join("; ") || "nothing yet";
@@ -2079,7 +2138,7 @@ function TapaCasaApp() {
       const text = await askAI(
 `You are the design director inside a property-design app. The property is located in ${location.region}${location.mapLabel ? " (" + location.mapLabel + ")" : ""} — use vendor names that sound like plausible LOCAL specialty companies for that region, and price at that region's actual market level (shown in USD). The visible site plan is a ${Math.round(win)}×${Math.round(win * 0.75)} ft area (origin top-left, x→right, y→down). Already on the plan/spec: ${existing}.
 
-The user requests: "${director}"
+The user requests: "${req}"
 
 Implement it. Respond with ONLY JSON, no fences, no preamble:
 {"summary":"one sentence describing what you did","items":[{"name":"Title Case name","vendorType":"plausible fictional specialty company","price":realistic installed USD number,"footprintW":feet number or null if interior/furniture/finish,"footprintD":feet or null,"x":feet from left or null,"y":feet from top or null,"room":"room name if interior, else empty string","notes":"how it should look, per the user's description","desc":"one-line spec"}]}
@@ -2196,7 +2255,7 @@ Features:\n${spec || "Vacant land only."}`);
         <WelcomeGuide open={showGuide} onClose={closeGuide} />
         <header className="hdr">
           <div className="hdr-mark">⌂</div>
-          <div style={{ flex: 1 }}><h1>TapaCasa</h1><p className="hdr-sub">SHEET 1 — SITE SELECTION · ANYWHERE ON EARTH · v15-ARCH</p></div>
+          <div style={{ flex: 1 }}><h1>TapaCasa</h1><p className="hdr-sub">SHEET 1 — SITE SELECTION · ANYWHERE ON EARTH · v16-GUIDE</p></div>
           <button className="btn-ghost xs" onClick={() => setShowGuide(true)}>? How it works</button>
         </header>
         <div className="loc-wrap">
@@ -2309,9 +2368,10 @@ Features:\n${spec || "Vacant land only."}`);
               placeholder={'"Line the driveway with cypress and put a rose garden by the pool" · "Emerald zellige tile and brass fixtures in the primary bath" · "Treehouse in the back oak"'}
               value={director} onChange={(e) => setDirector(e.target.value)} />
             <div className="ai-row">
-              <button className="btn-orange sm grow" onClick={runDirector} disabled={ai.busy}>
+              <button className="btn-orange sm grow" onClick={() => runDirector()} disabled={ai.busy}>
                 {ai.busy ? "Designing…" : "Implement it"}
               </button>
+              <button className="btn-ghost xs" title="Let the AI design the whole property in one tap" onClick={() => runDirector(AUTO_PROMPT)} disabled={ai.busy}>✨ Surprise me</button>
             </div>
             {ai.err && <div className="ai-err">{ai.err}</div>}
             {ai.note && <div className="ai-ok">✦ {ai.note}</div>}
@@ -2322,6 +2382,13 @@ Features:\n${spec || "Vacant land only."}`);
               {cats.map((c) => (
                 <button key={c} className={c === activeCat ? "ctab on" : "ctab"} onClick={() => setActiveCat(c)}>{c}</button>
               ))}
+            </div>
+          )}
+          {placed.length === 0 && !q && (
+            <div className="starter">
+              <div className="ai-label">NEW PARCEL — TWO WAYS TO START</div>
+              <button className="btn-orange sm wide-b" onClick={() => addItem(CATALOG[0].items[0], 1)}>🏠 Drop a 5,000 sq ft home</button>
+              <button className="btn-ghost wide" onClick={() => runDirector(AUTO_PROMPT)} disabled={ai.busy}>{ai.busy ? "Designing…" : "✨ Auto-design this whole property"}</button>
             </div>
           )}
           <div className="item-list">
@@ -2343,6 +2410,7 @@ Features:\n${spec || "Vacant land only."}`);
             </div>
             {planView !== "floor" ? (
               <div className="zoombtns">
+                <button className="ctab" title="What the symbols mean" onClick={() => setShowGuide(true)}>Legend</button>
                 {location.coords && (
                   <button className={satOn ? "ctab on" : "ctab"} onClick={() => setSatOn(!satOn)}>🛰 Imagery</button>
                 )}
@@ -2519,9 +2587,14 @@ Features:\n${spec || "Vacant land only."}`);
           )}
           <div className="cost-summary">
             <div className="cost-line"><span>Construction, landscape & contents</span><b>{fmt(totals.build)}</b></div>
+            <div className="cost-line">
+              <span><label className="soft-lab"><input type="checkbox" checked={softCosts} onChange={(e) => setSoftCosts(e.target.checked)} /> Soft costs — design 8% · permits 1.5% · contingency 10%</label></span>
+              <b>{fmt(totals.soft)}</b>
+            </div>
             <div className="cost-line total"><span>PROJECT TOTAL</span><b>{fmt(totals.total)}</b></div>
             <div className="cost-line"><span>Est. property tax / yr ({(location.taxRate * 100).toFixed(2)}%)</span><b>{fmt(totals.tax)}</b></div>
             <div className="cost-line"><span>Est. mortgage / mo (20% down, 6.5%, 30 yr)</span><b>{fmt(totals.monthly)}</b></div>
+            {totals.months > 0 && <div className="cost-line"><span>Est. build timeline</span><b>~{totals.months}–{Math.round(totals.months * 1.25)} mo</b></div>}
             <p className="fine">Map-parcel values, taxes and existing-home figures are AI estimates from typical market levels — not appraisals or listings. Catalog pricing is illustrative and vendors are fictional. Use the Zillow / Realtor / LandWatch links for real listings, and verify everything locally before making decisions.</p>
           </div>
         </section>
@@ -2645,6 +2718,14 @@ function Style() {
       .nearby-row { display:flex; flex-direction:column; gap:2px; font-size:12px; padding:5px 0; border-bottom:1px solid #1C3A60; }
       .nearby-row b { color:#8CDCAA; font-size:11px; }
       .nearby-row span { color:#C6DCF0; line-height:1.45; }
+      .starter { border:1.5px solid #8CDCAA; padding:10px; margin-bottom:12px; display:flex; flex-direction:column; gap:7px; }
+      .wide-b { width:100%; }
+      .lg-row { display:flex; align-items:center; gap:10px; margin:9px 0; font-size:12.5px; color:#C6DCF0; }
+      .lg-chip { width:34px; height:22px; flex:none; display:inline-block; background:#102C4E; }
+      .gloss p { margin-bottom:9px !important; }
+      .guide { max-height:82vh; overflow-y:auto; }
+      .soft-lab { display:flex; gap:6px; align-items:flex-start; cursor:pointer; }
+      .soft-lab input { accent-color:#FF7A29; margin-top:2px; }
       .guide-scrim { position:fixed; inset:0; background:rgba(5,15,30,0.8); z-index:50; display:flex; align-items:center; justify-content:center; padding:18px; }
       .guide { background:#102C4E; border:2px solid #FF7A29; max-width:480px; padding:22px; }
       .guide h3 { font-size:20px; font-weight:900; margin-bottom:12px; }
