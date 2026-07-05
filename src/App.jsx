@@ -41,8 +41,8 @@ const setApiKey = (k) => { try { localStorage.setItem("tapacasa_api_key", k.trim
       site's domain in each provider's dashboard (Google: key → Application
       restrictions → Websites; Mapbox: token → URL restrictions). */
 const SITE_KEYS = {
-  google: "",   // e.g. "AIza..."  → 🌍 Photoreal works for all visitors
-  mapbox: "",   // e.g. "pk...."   → HD satellite for all visitors
+  google: "AIzaSyDiASNmASU6JBNUfhswoySYFgCwfxn9fFI",
+  mapbox: "pk.eyJ1IjoicG9zZXk2MjgiLCJhIjoiY21yODBycmYzMWhwbDJ4cHc1M3NsdzcyNCJ9.UiRU2R-Kky2X5joV54Jrhg",
 };
 const getK = (n) => { try { return localStorage.getItem("tapacasa_" + n) || SITE_KEYS[n] || ""; } catch { return SITE_KEYS[n] || ""; } };
 const setK = (n, v) => { try { localStorage.setItem("tapacasa_" + n, (v || "").trim()); } catch { /* no-op */ } };
