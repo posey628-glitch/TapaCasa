@@ -1759,25 +1759,41 @@ function MapPicker({ onParcel }) {
     setSat(!sat);
   };
 
-  const runSearch = async () => {
-    if (!query.trim()) return;
-    setResults([{ loading: true, msg: "Searching map registry…" }]);
+  const nominatimSearch = async () => {
     try {
       const r = await fetchT(`https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(query)}`, {}, 6000);
       const d = await r.json();
-      if (d.length) { setResults(d); return; }
-      await googleLocate() || await aiLocate();
-    } catch { (await googleLocate()) || (await aiLocate()); }
+      if (d.length) { setResults(d); return true; }
+    } catch { /* blocked */ }
+    return false;
+  };
+  const runSearch = async () => {
+    if (!query.trim()) return;
+    setResults([{ loading: true, msg: "Searching…" }]);
+    const looksAddress = /\d/.test(query); /* house numbers → Google first (typo-tolerant, house-precise) */
+    if (looksAddress) {
+      if (await googleLocate()) return;
+      if (await nominatimSearch()) return;
+      await aiLocate();
+    } else {
+      if (await nominatimSearch()) return;
+      if (await googleLocate()) return;
+      await aiLocate();
+    }
   };
 
   const googleLocate = async () => {
     try {
       const d = await svcFetch("google", { type: "geocode", params: { address: query } }, 9000);
+      if (d?.status && d.status !== "OK" && d.status !== "ZERO_RESULTS") {
+        setResults([{ error: `Google geocoder says: ${d.status}${d.error_message ? " — " + d.error_message : ""}. Site owner: enable the Geocoding API on the server GOOGLE_API_KEY project.` }]);
+        return false;
+      }
       const g = d?.results?.[0];
       if (!g) return false;
       setResults([]);
       placePin(g.geometry.location.lat, g.geometry.location.lng, g.formatted_address || query);
-      mapRef.current?.setView([g.geometry.location.lat, g.geometry.location.lng], 16);
+      mapRef.current?.setView([g.geometry.location.lat, g.geometry.location.lng], g.geometry.location_type === "ROOFTOP" ? 18 : 16);
       return true;
     } catch { return false; }
   };
@@ -1788,7 +1804,7 @@ function MapPicker({ onParcel }) {
     if (!query.trim()) { setResults([{ error: "Type a place first, then hit ⚡ AI locate." }]); return; }
     setResults([{ loading: true, msg: "Locating by AI…" }]);
     try {
-      const text = await askAI(`Give approximate coordinates for this place: "${query}". Respond ONLY with JSON, no fences: {"lat":number,"lon":number,"label":"Place, Region, Country"}. If it is not a findable place, use your best guess for the nearest named place.`);
+      const text = await askAI(`Give approximate coordinates for this place: "${query}". First silently correct any obvious spelling mistakes (e.g. street or town typos). If you cannot pinpoint an exact street address, return the CENTER of the named town/city instead and make the label reflect that (e.g. "Medfield, Massachusetts (town center — exact address not located)"). Respond ONLY with JSON, no fences: {"lat":number,"lon":number,"label":"Place, Region, Country"}.`);
       const p = pickJSON(text);
       if (isNaN(+p.lat) || isNaN(+p.lon)) throw new Error("no coordinates in reply");
       setResults([]);
@@ -2560,7 +2576,7 @@ Features:\n${spec || "Vacant land only."}`);
         <WelcomeGuide open={showGuide} onClose={closeGuide} />
         <header className="hdr">
           <div className="hdr-mark">⌂</div>
-          <div style={{ flex: 1 }}><h1>TapaCasa</h1><p className="hdr-sub">SHEET 1 — SITE SELECTION · ANYWHERE ON EARTH · v18-CURB</p></div>
+          <div style={{ flex: 1 }}><h1>TapaCasa</h1><p className="hdr-sub">SHEET 1 — SITE SELECTION · ANYWHERE ON EARTH · v19-LOCATE</p></div>
           <button className="btn-ghost xs" onClick={() => setShowGuide(true)}>? How it works</button>
         </header>
         <div className="loc-wrap">
