@@ -205,14 +205,14 @@ async function askAI(content, ms = 30000) {
 
 /* ─────────── LAND LISTINGS ─────────── */
 const LISTINGS = [
-  { id: "mt", name: "Bitterroot Valley Ranch", region: "Montana", acres: 40, price: 850000, taxRate: 0.0074, vibe: "Snow-capped peaks, trout stream on the east line" },
-  { id: "ca", name: "Malibu Bluff Parcel", region: "California", acres: 2.3, price: 6200000, taxRate: 0.011, vibe: "180° Pacific views, private beach stair easement" },
-  { id: "tx", name: "Hill Country Parcel", region: "Texas", acres: 12, price: 720000, taxRate: 0.018, vibe: "Live oaks, limestone bluff, no HOA" },
-  { id: "nh", name: "Winnipesaukee Waterfront", region: "New Hampshire", acres: 1.8, price: 1450000, taxRate: 0.016, vibe: "310 ft of lake frontage, sunset exposure" },
-  { id: "az", name: "Red Rock Mesa Lot", region: "Sedona, Arizona", acres: 5, price: 980000, taxRate: 0.006, vibe: "Elevated mesa, dark-sky zoning, canyon views" },
-  { id: "ny", name: "Hudson Valley Acreage", region: "Upstate New York", acres: 25, price: 640000, taxRate: 0.017, vibe: "Rolling meadow, stone walls, 2 hrs from NYC" },
-  { id: "hi", name: "Kona Coast Estate Lot", region: "Big Island, Hawaii", acres: 3, price: 1900000, taxRate: 0.003, vibe: "Lava-rock coastline, year-round trade winds" },
-  { id: "co", name: "Alpine Meadow Tract", region: "Colorado Rockies", acres: 6, price: 2800000, taxRate: 0.0055, vibe: "Ski-out ridgeline, aspen grove, gated road" },
+  { id: "mt", coords: { lat: 46.045, lon: -114.145 }, name: "Bitterroot Valley Ranch", region: "Montana", acres: 40, price: 850000, taxRate: 0.0074, vibe: "Snow-capped peaks, trout stream on the east line" },
+  { id: "ca", coords: { lat: 34.0322, lon: -118.7028 }, name: "Malibu Bluff Parcel", region: "California", acres: 2.3, price: 6200000, taxRate: 0.011, vibe: "180° Pacific views, private beach stair easement" },
+  { id: "tx", coords: { lat: 30.272, lon: -98.402 }, name: "Hill Country Parcel", region: "Texas", acres: 12, price: 720000, taxRate: 0.018, vibe: "Live oaks, limestone bluff, no HOA" },
+  { id: "nh", coords: { lat: 43.601, lon: -71.322 }, name: "Winnipesaukee Waterfront", region: "New Hampshire", acres: 1.8, price: 1450000, taxRate: 0.016, vibe: "310 ft of lake frontage, sunset exposure" },
+  { id: "az", coords: { lat: 34.884, lon: -111.795 }, name: "Red Rock Mesa Lot", region: "Sedona, Arizona", acres: 5, price: 980000, taxRate: 0.006, vibe: "Elevated mesa, dark-sky zoning, canyon views" },
+  { id: "ny", coords: { lat: 41.853, lon: -73.755 }, name: "Hudson Valley Acreage", region: "Upstate New York", acres: 25, price: 640000, taxRate: 0.017, vibe: "Rolling meadow, stone walls, 2 hrs from NYC" },
+  { id: "hi", coords: { lat: 19.642, lon: -155.995 }, name: "Kona Coast Estate Lot", region: "Big Island, Hawaii", acres: 3, price: 1900000, taxRate: 0.003, vibe: "Lava-rock coastline, year-round trade winds" },
+  { id: "co", coords: { lat: 39.193, lon: -106.823 }, name: "Alpine Meadow Tract", region: "Colorado Rockies", acres: 6, price: 2800000, taxRate: 0.0055, vibe: "Ski-out ridgeline, aspen grove, gated road" },
 ];
 
 const RAND_PLACES = [
@@ -329,6 +329,19 @@ const CATALOG = [
     { id: "fence", name: "Perimeter Fencing", vendor: "Meridian Design-Build", desc: "Cedar or steel estate fencing", footprint: null, variants: [["1,000 linear ft", 48000]] },
     { id: "playset", name: "Playground Set", vendor: "Vertical Habitat", desc: "Cedar tower, swings, rubber mulch", footprint: [25, 25], variants: [["Estate playset", 14000]] },
     { id: "clearing", name: "Land Clearing & Grading", vendor: "Blacktop Civil Co.", desc: "Tree/brush removal, stump grinding, rough grade — drag over anything to clear it (removes real features in Photoreal)", footprint: [100, 100], variants: [["¼-acre clear & grade", 6500, [100, 100]], ["1-acre clear & grade", 18000, [210, 205]], ["2-acre clear & grade", 32000, [300, 290]]] },
+  ]},
+  { cat: "Renovation", items: [
+    { id: "poolremove", name: "Pool Removal & Fill-In", vendor: "Blacktop Civil Co.", desc: "Drain, demo shell, engineered fill, compact, regrade — goodbye pool", footprint: null, variants: [["Full removal + fill", 12500], ["Partial fill (non-buildable)", 7500]] },
+    { id: "kitreno", name: "Kitchen Remodel", vendor: "Rangeline Kitchens", desc: "Gut to studs, new cabinets/counters/appliances", footprint: null, variants: [["Mid-range remodel", 48000], ["High-end remodel", 95000]] },
+    { id: "bathreno", name: "Bathroom Remodel", vendor: "Stillwater Wellness", desc: "Full gut & refit, tile, fixtures, glass", footprint: null, variants: [["Hall bath", 21000], ["Primary bath", 42000]] },
+    { id: "roofrepl", name: "Roof Replacement", vendor: "Hearthstone Masonry", desc: "Tear-off + architectural shingles or standing seam", footprint: null, variants: [["Shingle re-roof", 24000], ["Standing-seam metal", 52000]] },
+    { id: "repaint", name: "Whole-Home Repaint", vendor: "Atelier Finish Co.", desc: "Interior + exterior, prep and two coats", footprint: null, variants: [["Interior only", 9500], ["Inside + out", 18500]] },
+    { id: "winrepl", name: "Window Replacement", vendor: "Skyline Glassworks", desc: "Full-house energy-rated replacement windows", footprint: null, variants: [["20 windows", 28000], ["35 windows", 46000]] },
+    { id: "addition", name: "Home Addition", vendor: "Meridian Design-Build", desc: "New conditioned wing tied into the existing home", footprint: [22, 26], variants: [["500 sq ft addition", 165000], ["900 sq ft addition", 275000, [30, 30]]] },
+    { id: "deckreb", name: "Deck Rebuild", vendor: "Foliohaus Millwork", desc: "Demo old deck, new composite + cable rail", footprint: [16, 20], variants: [["300 sq ft deck", 24000]] },
+    { id: "hvacrepl", name: "HVAC Replacement", vendor: "Deepwell Comfort", desc: "New high-efficiency heat pump system", footprint: null, variants: [["Whole-home system", 16500]] },
+    { id: "treeremove", name: "Tree Removal", vendor: "Canopy & Root Nursery", desc: "Fell, chip, stump-grind one mature tree", footprint: null, variants: [["Per large tree", 1800]] },
+    { id: "sewerline", name: "Sewer / Septic Update", vendor: "Blacktop Civil Co.", desc: "Replace failing line or install new septic", footprint: null, variants: [["Sewer line replacement", 12000], ["New septic system", 28000]] },
   ]},
   { cat: "Commercial", items: [
     { id: "retail", name: "Retail Shell Building", vendor: "Meridian Commercial", desc: "Steel-frame shell, storefront glazing, vanilla box", footprint: [60, 85], variants: [["5,000 sq ft · $185/sq ft", 925000], ["10,000 sq ft strip", 1750000, [80, 125]]] },
@@ -481,6 +494,7 @@ function loadCesium() {
 /* 🌍 PHOTOREAL — your design placed inside Google's photorealistic 3D scan of the real world */
 function PhotorealView({ location, items }) {
   const holder = useRef(null);
+  const prApi = useRef({});
   const [st, setSt] = useState("init");
   const [err, setErr] = useState("");
   const key = getK("google");
@@ -606,11 +620,35 @@ function PhotorealView({ location, items }) {
           if (id === "house") boxAt(lo, la, 0.45 + hM, 1.1, 1.1, Math.min(w, dep) * 0.42 + 0.8, "#8a7466");
         });
 
-        viewer.camera.flyTo({
+        /* glowing beacon so the parcel is findable from any distance */
+        const NODEPTH = Number.POSITIVE_INFINITY;
+        viewer.entities.add({
+          polyline: { positions: Cesium.Cartesian3.fromDegreesArrayHeights([location.coords.lon, location.coords.lat, 0, location.coords.lon, location.coords.lat, 160]), width: 5, material: new Cesium.PolylineGlowMaterialProperty({ glowPower: 0.35, color: Cesium.Color.fromCssColorString("#FF7A29") }) },
+        });
+        viewer.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(location.coords.lon, location.coords.lat, 165),
+          point: { pixelSize: 13, color: Cesium.Color.fromCssColorString("#FF7A29"), outlineColor: Cesium.Color.WHITE, outlineWidth: 2, disableDepthTestDistance: NODEPTH },
+          label: { text: "⌂ " + (location.name || "YOUR PARCEL"), font: "700 15px system-ui", fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.fromCssColorString("#14243D"), outlineWidth: 4, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(0, -20), disableDepthTestDistance: NODEPTH },
+        });
+        const flyHome = () => viewer.camera.flyTo({
           destination: Cesium.Cartesian3.fromDegrees(location.coords.lon, location.coords.lat - Math.max(0.0009, lotD / ftLat), Math.max(90, lotW * M * 0.9)),
           orientation: { heading: 0, pitch: -0.55, roll: 0 },
-          duration: 2.5,
+          duration: 1.8,
         });
+        prApi.current.flyHome = flyHome;
+        prApi.current.orbitTo = (deg) => {
+          const rad = (deg * Math.PI) / 180;
+          const offLat = Math.max(0.0009, lotD / ftLat);
+          viewer.camera.flyTo({
+            destination: Cesium.Cartesian3.fromDegrees(
+              location.coords.lon + Math.sin(rad) * offLat * (ftLat / ftLon),
+              location.coords.lat - Math.cos(rad) * offLat,
+              Math.max(90, lotW * M * 0.9)),
+            orientation: { heading: rad, pitch: -0.55, roll: 0 },
+            duration: 1.4,
+          });
+        };
+        flyHome();
         setSt("ok");
       } catch (e) { setErr(e?.message || "photoreal init failed"); setSt("failed"); }
     }).catch((e) => { if (!dead) { setErr(e?.message || "engine blocked"); setSt("failed"); } });
@@ -624,6 +662,13 @@ function PhotorealView({ location, items }) {
   );
   return (
     <div>
+      <div className="cam-bar">
+        <button className="btn-orange sm" onClick={() => prApi.current.flyHome?.()}>🎯 Back to my parcel</button>
+        {[["S", 0], ["W", 90], ["N", 180], ["E", 270]].map(([lbl, deg]) => (
+          <button key={lbl} className="ctab" title={`View from the ${lbl}`} onClick={() => prApi.current.orbitTo?.(deg)}>{lbl}</button>
+        ))}
+        <span className="orbit-hint" style={{ margin: 0 }}>LOST? THE ORANGE BEACON MARKS YOUR LOT — VISIBLE FROM ANY DISTANCE</span>
+      </div>
       <div className="threed-holder photo">
         <div ref={holder} className="threed-mount" />
         {st === "loading" && <div className="map-msg">Streaming the real world in 3D… (first load takes a moment)</div>}
@@ -645,6 +690,15 @@ const STYLE_DEFAULTS = {
   green: { wall: "#cfe3ea", roofC: "#cfe3ea", roofT: "gable" },
 };
 const getStyle = (it) => ({ ...(STYLE_DEFAULTS[it.itemId] || { wall: "#e9e2d3", roofC: "#4a525c", roofT: "gable" }), ...(it.style || {}) });
+const ARCH_STYLES = {
+  Modern: { wall: "#f5f5f2", roofC: "#33383f", roofT: "modern" },
+  Farmhouse: { wall: "#fbfaf6", roofC: "#3c3f45", roofT: "gable" },
+  Victorian: { wall: "#cdb9c9", roofC: "#43304a", roofT: "gable" },
+  Mediterranean: { wall: "#efe0c4", roofC: "#a4552f", roofT: "hip" },
+  Colonial: { wall: "#f2eee6", roofC: "#3c3f45", roofT: "gable" },
+  Craftsman: { wall: "#9a866a", roofC: "#4a3527", roofT: "gable" },
+  Ranch: { wall: "#d9cbb0", roofC: "#5a4638", roofT: "hip" },
+};
 const WALL_SWATCHES = ["#f2eee6", "#dfd6c3", "#b9c4cc", "#8f3b32", "#3f4753", "#f7f7f2"];
 const ROOF_SWATCHES = ["#454e59", "#7a4a35", "#2f4a3e", "#8a8f96"];
 const BUILDABLE = { house: 1, guest: 1, barn: 1, retail: 1, warehouse: 1, bowl: 1, court: 1, green: 1 };
@@ -1142,6 +1196,7 @@ function ThreeDView({ location, items, viewFt, onSnapshot, selectedUid, onSelect
       api.current = {
         mv, stick,
         setSun: (h) => updateSun(h),
+        view: (az2, el2) => { mode = "orbit"; camModeRef.current = "orbit"; orbit.az = az2 ?? orbit.az; orbit.el = el2 ?? orbit.el; orbit.vaz = 0; orbit.vel = 0; applyCam(); },
         setMode: (m) => { mode = m; applyCam(); },
         reset: () => { orbit.az = 0.85; orbit.el = 0.5; orbit.dist = Math.max(winW, winD) * 1.15; orbit.vaz = 0; orbit.vel = 0; walk.yaw = Math.PI; walk.pitch = -0.03; walk.pos.set(0, 5.8, winD * 0.48); applyCam(); },
         snap: () => {
@@ -1191,6 +1246,10 @@ function ThreeDView({ location, items, viewFt, onSnapshot, selectedUid, onSelect
       <div className="cam-bar">
         <button className={camMode === "orbit" ? "ctab on" : "ctab"} onClick={() => switchMode("orbit")}>🛸 Orbit</button>
         <button className={camMode === "walk" ? "ctab on" : "ctab"} onClick={() => switchMode("walk")}>🚶 Walk the land</button>
+        <span className="style-lab">VIEW:</span>
+        {[["Front", 0, 0.42], ["Right", Math.PI / 2, 0.42], ["Back", Math.PI, 0.42], ["Left", -Math.PI / 2, 0.42], ["Top", 0.8, 1.42]].map(([lbl, az2, el2]) => (
+          <button key={lbl} className="ctab" onClick={() => { switchMode("orbit"); api.current.view?.(az2, el2); }}>{lbl}</button>
+        ))}
         <button className="btn-ghost xs" onClick={() => api.current.reset?.()}>Reset view</button>
         <button className="btn-ghost xs" onClick={() => api.current.snap?.()}>📸 Snapshot</button>
         <label className="sun-lab" title="Drag to move the sun through the day — real shadows for this latitude">
@@ -1202,6 +1261,11 @@ function ThreeDView({ location, items, viewFt, onSnapshot, selectedUid, onSelect
       {canStyle && (
         <div className="style-bar">
           <span className="style-name">🎨 {selItem.name}</span>
+          <select className="ci-select arch" value={styleOf.arch || ""}
+            onChange={(e) => { const p2 = ARCH_STYLES[e.target.value]; if (p2) onStyle?.(selItem.uid, { ...styleOf, ...p2, arch: e.target.value }); }}>
+            <option value="">Home style…</option>
+            {Object.keys(ARCH_STYLES).map((k) => <option key={k} value={k}>{k}</option>)}
+          </select>
           <span className="style-lab">Walls</span>
           {WALL_SWATCHES.map((c) => (
             <button key={c} className={`swatch ${styleOf.wall === c ? "on" : ""}`} style={{ background: c }} onClick={() => onStyle?.(selItem.uid, { ...styleOf, wall: c })} aria-label={`Wall color ${c}`} />
@@ -1657,6 +1721,7 @@ function MapPicker({ onParcel }) {
   const streetLayer = useRef(null);
   const [status, setStatus] = useState("loading"); // loading | ready | failed
   const [query, setQuery] = useState("");
+  const typeTimer = useRef(null);
   const [results, setResults] = useState([]);
   const [pin, setPin] = useState(null); // {lat, lon, label}
   const [acres, setAcres] = useState(2);
@@ -1962,10 +2027,37 @@ Be realistic: urban/suburban land is far pricier per acre than rural; use the ac
   return (
     <div className="map-block">
       <div className="map-toolbar">
-        <input className="search sm" placeholder="Search any address, city, or place on Earth…"
-          value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && runSearch()} />
+        <input className="search sm" placeholder="Type an address or place — suggestions appear as you type…"
+          value={query}
+          onChange={(e) => {
+            const v = e.target.value;
+            setQuery(v);
+            clearTimeout(typeTimer.current);
+            if (v.trim().length < 3) { setResults([]); return; }
+            typeTimer.current = setTimeout(async () => {
+              try {
+                const r = await fetchT(`https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(v)}`, {}, 5000);
+                const d = await r.json();
+                setResults(Array.isArray(d) ? d : []);
+              } catch { /* suggestions unavailable — Enter still searches */ }
+            }, 350);
+          }}
+          onKeyDown={(e) => { if (e.key === "Enter") { clearTimeout(typeTimer.current); runSearch(); } }} />
         <button className="btn-orange sm" onClick={runSearch}>Search</button>
         <button className="btn-ghost xs" onClick={aiLocate}>⚡ AI locate</button>
+        <button className="btn-ghost xs" title="Jump to where you are right now" onClick={() => {
+          navigator.geolocation?.getCurrentPosition(async (pos) => {
+            const { latitude: la, longitude: lo } = pos.coords;
+            let label = `${la.toFixed(4)}, ${lo.toFixed(4)}`;
+            try {
+              const r = await fetchT(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${la}&lon=${lo}&zoom=16`, {}, 5000);
+              const d = await r.json();
+              if (d.display_name) label = d.display_name;
+            } catch { /* coords label */ }
+            placePin(la, lo, label);
+            mapRef.current?.setView([la, lo], 17);
+          }, () => setResults([{ error: "Location permission denied — allow it in your browser, or search instead." }]));
+        }}>📍 My location</button>
         <button className="btn-ghost xs" onClick={toggleSat} disabled={status !== "ready"}>{sat ? "Street view" : "Satellite"}</button>
         <button className="btn-ghost xs" onClick={randomSpot} disabled={rolling} title="Drop somewhere random on the planet and build there">{rolling ? "Rolling…" : "🎲 Anywhere on Earth"}</button>
         {!tracing
@@ -2275,6 +2367,11 @@ function TapaCasaApp() {
   const [snapUrl, setSnapUrl] = useState(null);
   const [nearby, setNearby] = useState(null);
   const [customRooms, setCustomRooms] = useState([]);
+  const deleteRoom = (name, floor) => {
+    setCustomRooms((r) => r.filter((x) => !(x.name === name && x.floor === floor)));
+    setPlaced((p) => p.map((i) => (!i.fp && i.room === name && (i.floor || "1") === floor) ? { ...i, room: "" } : i));
+    setSelectedRoom(null);
+  };
   const seedRooms = (label) => {
     const m = label.match(/([\d,]+)/);
     const sq = m ? +m[1].replace(/,/g, "") : 3000;
@@ -2451,7 +2548,7 @@ The user requests: "${req}"
 Implement it. Respond with ONLY JSON, no fences, no preamble:
 {"summary":"one sentence describing what you did","items":[{"name":"Title Case name","vendorType":"plausible fictional specialty company","price":realistic installed USD number,"footprintW":feet number or null if interior/furniture/finish,"footprintD":feet or null,"x":feet from left or null,"y":feet from top or null,"room":"room name if interior, else empty string","notes":"how it should look, per the user's description","desc":"one-line spec"}]}
 
-Rules: realistic market pricing; place footprint items sensibly relative to existing items and the user's wording (e.g. 'next to the pool', 'along the north edge' = small y, 'front' = large y); split a request into multiple items when natural (max 6); keep footprints true to real-world size.`);
+Rules: realistic market pricing; place footprint items sensibly relative to existing items and the user's wording (e.g. 'next to the pool', 'along the north edge' = small y, 'front' = large y); split a request into multiple items when natural (max 6); keep footprints true to real-world size. ONLY conventional, tasteful property features that a normal architect would propose for this region — never invent bizarre or gimmicky items unless the user explicitly asked for them; modest quantities; nothing overlapping.`);
       const parsed = pickJSON(text);
       const list = Array.isArray(parsed.items) ? parsed.items : [];
       if (!list.length) throw new Error("empty");
@@ -2536,8 +2633,12 @@ Features:\n${spec || "Vacant land only."}`);
 
   /* ── open a parcel; seed an existing house if the lot is developed ── */
   const openParcel = (loc) => {
+    if (loc.coords && !loc.mapLabel) loc = { ...loc, mapLabel: `${loc.name}, ${loc.region}` };
     setPlaced([]); setSelected(null); dropSpot.current = 0; resetHistory();
     setSatOn(!!loc.coords); setFloorSel("1");
+    setCustomRooms([]); setSelectedRoom(null); setNewRoom("");
+    setNearby(null); setListing(null); setSnapUrl(null);
+    setAi({ busy: false, err: null, note: null });
     setLocation(loc);
     if (loc.existingHome && loc.existingHome.value > 0) {
       const side = Math.sqrt((loc.existingHome.sqft || 2000) / 0.75);
@@ -2576,7 +2677,7 @@ Features:\n${spec || "Vacant land only."}`);
         <WelcomeGuide open={showGuide} onClose={closeGuide} />
         <header className="hdr">
           <div className="hdr-mark">⌂</div>
-          <div style={{ flex: 1 }}><h1>TapaCasa</h1><p className="hdr-sub">SHEET 1 — SITE SELECTION · ANYWHERE ON EARTH · v19-LOCATE</p></div>
+          <div style={{ flex: 1 }}><h1>TapaCasa</h1><p className="hdr-sub">SHEET 1 — SITE SELECTION · ANYWHERE ON EARTH · v21-BASICS</p></div>
           <button className="btn-ghost xs" onClick={() => setShowGuide(true)}>? How it works</button>
         </header>
         <div className="loc-wrap">
@@ -2774,8 +2875,10 @@ Features:\n${spec || "Vacant land only."}`);
               </div>
               <FloorPlan houseSqft={perFloorSqft} floorLabel={floorSel === "B" ? "BASEMENT" : `LEVEL ${floorSel}`}
                 rooms={roomsByFloor[floorSel] || {}} selectedRoom={selectedRoom} onSelectRoom={setSelectedRoom} />
-              {selectedRoom && (roomsByFloor[floorSel]?.[selectedRoom] || []).length === 0 && (
-                <button className="ci-remove" onClick={() => { setCustomRooms((r) => r.filter((x) => !(x.name === selectedRoom && x.floor === floorSel))); setSelectedRoom(null); }}>Remove empty room "{selectedRoom}"</button>
+              {selectedRoom && (
+                <button className="ci-remove" onClick={() => deleteRoom(selectedRoom, floorSel)}>
+                  ✕ Remove room "{selectedRoom}"{(roomsByFloor[floorSel]?.[selectedRoom] || []).length ? " (its items move to Unassigned)" : ""}
+                </button>
               )}
             </div>
           ) : (
@@ -2877,6 +2980,13 @@ Features:\n${spec || "Vacant land only."}`);
               <div key={p.uid} className={`cost-item ${selected === p.uid ? "sel" : ""}`} onClick={() => p.fp && setSelected(p.uid)}>
                 <div className="ci-top"><span className="ci-name">{p.name}</span><b className="ci-price">{fmt(p.price)}</b></div>
                 <div className="ci-vendor">{p.vendor}{p.fp ? ` · ${Math.round(p.fp[0])}′×${Math.round(p.fp[1])}′` : ""}</div>
+                {(p.itemId === "house" || p.itemId === "guest") && (
+                  <select className="ci-select" value={(p.style && p.style.arch) || ""} onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => { const p2 = ARCH_STYLES[e.target.value]; if (p2) patch(p.uid, { style: { ...getStyle(p), ...p2, arch: e.target.value } }); }}>
+                    <option value="">Home style — Modern, Victorian…</option>
+                    {Object.keys(ARCH_STYLES).map((k) => <option key={k} value={k}>{k}</option>)}
+                  </select>
+                )}
                 {p.variants.length > 1 && (
                   <select className="ci-select" value={p.variantIdx} onClick={(e) => e.stopPropagation()} onChange={(e) => changeVariant(p.uid, +e.target.value)}>
                     {p.variants.map((v, i) => <option key={i} value={i}>{v[0]} — {fmt(v[1])}</option>)}
@@ -3026,6 +3136,7 @@ function Style() {
       .style-bar { display:flex; align-items:center; gap:6px; flex-wrap:wrap; border:1.5px solid #FF7A29; background:rgba(255,122,41,0.06); padding:7px 9px; margin-bottom:8px; }
       .style-name { font-size:12.5px; font-weight:700; margin-right:4px; }
       .style-lab { font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:1px; color:#7FA8CC; }
+      .ci-select.arch { flex:none; width:150px; }
       .swatch { width:24px; height:24px; border:2px solid #2A4A72; cursor:pointer; padding:0; }
       .swatch.on { border-color:#FF9A52; }
       .cam-bar { display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
